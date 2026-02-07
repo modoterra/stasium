@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go&logoColor=white)](https://go.dev)
 
-A Linux TUI + local daemon that discovers, monitors, and manages services for
+A TUI + local daemon that discovers, monitors, and manages services for
 development environments. Built for Laravel stacks but works with any
 combination of systemd units, exec processes, Docker containers, and log files.
 
