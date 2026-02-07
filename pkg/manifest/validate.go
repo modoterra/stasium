@@ -10,6 +10,10 @@ func Validate(m *Manifest) []error {
 		errs = append(errs, fmt.Errorf("version must be 1, got %d", m.Version))
 	}
 
+	if len(m.Items) == 0 {
+		errs = append(errs, fmt.Errorf("manifest must define at least one item"))
+	}
+
 	// Validate items
 	for name, item := range m.Items {
 		switch item.Kind {
@@ -25,7 +29,7 @@ func Validate(m *Manifest) []error {
 				errs = append(errs, fmt.Errorf("item %q (exec): restart must be always, on-failure, or never; got %q", name, item.Restart))
 			}
 		case "docker":
-			if item.Container == "" && (item.Compose == "" || item.Service == "") {
+			if item.Container == "" && (item.ComposeFile == "" || item.Service == "") {
 				errs = append(errs, fmt.Errorf("item %q (docker): container or compose+service is required", name))
 			}
 		case "log":
