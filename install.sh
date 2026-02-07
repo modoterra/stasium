@@ -55,7 +55,8 @@ esac
 
 if [[ -z "$VERSION" ]]; then
   echo "Fetching latest release..."
-  VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+  # /releases/latest excludes pre-releases; fall back to the first entry in /releases
+  VERSION="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases?per_page=1" \
     | grep '"tag_name"' | head -1 | sed -E 's/.*"tag_name": *"([^"]+)".*/\1/')"
   if [[ -z "$VERSION" ]]; then
     echo "Error: could not determine latest version" >&2
