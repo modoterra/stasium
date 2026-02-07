@@ -36,7 +36,7 @@ representing the project in public spaces.
 ## Reporting
 
 Instances of unacceptable behavior may be reported by contacting the project
-maintainers at **conduct@modoterra.com**. All reports will be reviewed
+maintainers at **conduct@modoterra.xyz**. All reports will be reviewed
 promptly and handled at Modoterra Corporation's sole discretion.
 
 ## Attribution

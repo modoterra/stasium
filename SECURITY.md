@@ -5,7 +5,7 @@
 If you discover a security vulnerability in Stasium, please report it
 responsibly. **Do not open a public GitHub issue.**
 
-Email: **security@modoterra.com**
+Email: **security@modoterra.xyz**
 
 Include:
 
