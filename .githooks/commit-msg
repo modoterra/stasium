@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# .githooks/commit-msg — Validates conventional commit format.
+#
+# Install: make setup (or: git config core.hooksPath .githooks)
+
+set -euo pipefail
+
+msg_file="$1"
+msg=$(head -1 "$msg_file")
+
+# Conventional commit regex:
+#   type(scope)!: description
+#   type!: description
+#   type: description
+pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\(.+\))?!?: .{1,}'
+
+if ! echo "$msg" | grep -Eq "$pattern"; then
+  echo "ERROR: Commit message does not follow Conventional Commits."
+  echo ""
+  echo "  Expected: <type>[optional scope]: <description>"
+  echo ""
+  echo "  Types: feat fix docs style refactor perf test build ci chore revert"
+  echo ""
+  echo "  Examples:"
+  echo "    feat(tui): add log search filter"
+  echo "    fix: prevent nil pointer in poll loop"
+  echo "    docs: update README installation section"
+  echo ""
+  echo "  See: https://www.conventionalcommits.org/"
+  echo ""
+  exit 1
+fi

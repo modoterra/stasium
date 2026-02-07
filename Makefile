@@ -7,7 +7,7 @@ LDFLAGS  = -ldflags "-X github.com/modoterra/stasium/internal/buildinfo.Version=
                       -X github.com/modoterra/stasium/internal/buildinfo.Commit=$(COMMIT) \
                       -X github.com/modoterra/stasium/internal/buildinfo.Date=$(DATE)"
 
-.PHONY: build test lint clean install
+.PHONY: build test lint clean install setup
 
 build:
 	go build $(LDFLAGS) -o bin/$(BINARY_CLIENT) ./cmd/stasium
@@ -25,3 +25,7 @@ clean:
 install: build
 	cp bin/$(BINARY_CLIENT) $(GOPATH)/bin/ 2>/dev/null || cp bin/$(BINARY_CLIENT) ~/go/bin/
 	cp bin/$(BINARY_DAEMON) $(GOPATH)/bin/ 2>/dev/null || cp bin/$(BINARY_DAEMON) ~/go/bin/
+
+setup:
+	git config core.hooksPath .githooks
+	@echo "Git hooks configured (.githooks/)"

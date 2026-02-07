@@ -1,0 +1,59 @@
+version: 2
+
+project_name: stasium
+
+builds:
+  - id: stasium
+    main: ./cmd/stasium
+    binary: stasium
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/modoterra/stasium/internal/buildinfo.Version={{.Version}}
+      - -X github.com/modoterra/stasium/internal/buildinfo.Commit={{.Commit}}
+      - -X github.com/modoterra/stasium/internal/buildinfo.Date={{.Date}}
+
+  - id: stasiumd
+    main: ./cmd/stasiumd
+    binary: stasiumd
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+      - -X github.com/modoterra/stasium/internal/buildinfo.Version={{.Version}}
+      - -X github.com/modoterra/stasium/internal/buildinfo.Commit={{.Commit}}
+      - -X github.com/modoterra/stasium/internal/buildinfo.Date={{.Date}}
+
+archives:
+  - id: default
+    format: tar.gz
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^style:"
+      - "^chore:"
+      - "^ci:"
+
+release:
+  github:
+    owner: modoterra
+    name: stasium
+  draft: false
+  prerelease: auto
