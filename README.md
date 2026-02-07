@@ -54,13 +54,20 @@ newline-delimited JSON.
 
 ## Installation
 
-### From source
+### Install script (recommended)
 
 ```bash
-git clone https://github.com/modoterra/stasium.git
-cd stasium
-make build
-# Binaries in bin/stasium and bin/stasiumd
+curl -fsSL https://raw.githubusercontent.com/modoterra/stasium/main/install.sh | bash
+```
+
+Options:
+
+```bash
+# Install a specific version
+curl -fsSL ... | bash -s -- --version v0.1.0
+
+# Custom install directory (default: ~/.local/bin)
+curl -fsSL ... | bash -s -- --prefix /usr/local/bin
 ```
 
 ### Go install
@@ -68,6 +75,15 @@ make build
 ```bash
 go install github.com/modoterra/stasium/cmd/stasium@latest
 go install github.com/modoterra/stasium/cmd/stasiumd@latest
+```
+
+### From source
+
+```bash
+git clone https://github.com/modoterra/stasium.git
+cd stasium
+make build
+# Binaries in bin/stasium and bin/stasiumd
 ```
 
 ### Binary releases
@@ -104,7 +120,10 @@ stasium stop item <name>        Stop an item
 stasium restart item <name>     Restart an item
 stasium restart group <name>    Restart all items in a group
 
-stasium daemon                  Run daemon in foreground
+stasium daemon run              Run daemon in foreground
+stasium daemon install          Install daemon as systemd user service
+stasium daemon uninstall        Remove daemon systemd user service
+stasium daemon status           Show daemon status
 stasium completion bash|zsh|fish  Shell completions
 ```
 

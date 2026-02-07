@@ -14,6 +14,7 @@ import (
 
 	"github.com/modoterra/stasium/internal/buildinfo"
 	"github.com/modoterra/stasium/pkg/core"
+	"github.com/modoterra/stasium/pkg/daemon/service"
 	"github.com/modoterra/stasium/pkg/manifest"
 	"github.com/modoterra/stasium/pkg/manifest/presets"
 	"github.com/modoterra/stasium/pkg/transport/uds"
@@ -131,10 +132,15 @@ var versionCmd = &cobra.Command{
 
 var daemonCmd = &cobra.Command{
 	Use:   "daemon",
+	Short: "Manage the stasium daemon",
+	Long:  "Run the daemon in foreground, or install/uninstall it as a systemd user service.",
+}
+
+var daemonRunCmd = &cobra.Command{
+	Use:   "run",
 	Short: "Start daemon in foreground (for debugging)",
 	Long:  "Normally the TUI auto-spawns the daemon. Use this to run it manually.",
 	RunE: func(_ *cobra.Command, _ []string) error {
-		// Just exec stasiumd directly
 		args := []string{}
 		if manifestFlag != "" {
 			args = append(args, "--manifest", manifestFlag)
@@ -146,10 +152,46 @@ var daemonCmd = &cobra.Command{
 	},
 }
 
+var daemonInstallCmd = &cobra.Command{
+	Use:   "install",
+	Short: "Install daemon as a systemd user service",
+	RunE: func(_ *cobra.Command, _ []string) error {
+		if err := service.Install(); err != nil {
+			return err
+		}
+		fmt.Println("stasiumd installed and started as a systemd user service ✓")
+		return nil
+	},
+}
+
+var daemonUninstallCmd = &cobra.Command{
+	Use:   "uninstall",
+	Short: "Uninstall daemon systemd user service",
+	RunE: func(_ *cobra.Command, _ []string) error {
+		if err := service.Uninstall(); err != nil {
+			return err
+		}
+		fmt.Println("stasiumd systemd user service removed ✓")
+		return nil
+	},
+}
+
+var daemonStatusCmd = &cobra.Command{
+	Use:   "status",
+	Short: "Show daemon status",
+	Run: func(_ *cobra.Command, _ []string) {
+		fmt.Println(service.Status(socketPath))
+	},
+}
+
 var manifestFlag string
 
 func init() {
-	daemonCmd.Flags().StringVar(&manifestFlag, "manifest", "", "path to stasium.yaml")
+	daemonRunCmd.Flags().StringVar(&manifestFlag, "manifest", "", "path to stasium.yaml")
+	daemonCmd.AddCommand(daemonRunCmd)
+	daemonCmd.AddCommand(daemonInstallCmd)
+	daemonCmd.AddCommand(daemonUninstallCmd)
+	daemonCmd.AddCommand(daemonStatusCmd)
 }
 
 // --- Status ---
