@@ -234,7 +234,7 @@ func (d *Daemon) applyAddItem(m *manifest.Manifest, patch *uds.ItemPatch) (any, 
 			restart = core.RestartOnFailure
 		}
 		d.supervisor.Register(patch.Name, item.Command, item.Dir, item.Env, restart)
-		d.supervisor.Start(patch.Name)
+		_ = d.supervisor.Start(patch.Name)
 	}
 
 	d.logger.Info("manifest item added", "name", patch.Name, "kind", item.Kind)
@@ -271,16 +271,16 @@ func (d *Daemon) applyUpdateItem(m *manifest.Manifest, patch *uds.ItemPatch) (an
 	// Live-reload exec processes if command/dir/env changed
 	if item.Kind == "exec" && d.supervisor != nil {
 		if old.Kind == "exec" && (old.Command != item.Command || old.Dir != item.Dir) {
-			d.supervisor.Unregister(patch.Name)
+			_ = d.supervisor.Unregister(patch.Name)
 		}
 		restart := core.RestartPolicy(item.Restart)
 		if restart == "" {
 			restart = core.RestartOnFailure
 		}
 		d.supervisor.Register(patch.Name, item.Command, item.Dir, item.Env, restart)
-		d.supervisor.Start(patch.Name)
+		_ = d.supervisor.Start(patch.Name)
 	} else if old.Kind == "exec" && item.Kind != "exec" && d.supervisor != nil {
-		d.supervisor.Unregister(patch.Name)
+		_ = d.supervisor.Unregister(patch.Name)
 	}
 
 	d.logger.Info("manifest item updated", "name", patch.Name, "kind", item.Kind)
@@ -313,7 +313,7 @@ func (d *Daemon) applyRemoveItem(m *manifest.Manifest, name string) (any, error)
 
 	// Live-reload: stop supervised exec processes
 	if old.Kind == "exec" && d.supervisor != nil {
-		d.supervisor.Unregister(name)
+		_ = d.supervisor.Unregister(name)
 	}
 
 	d.logger.Info("manifest item removed", "name", name, "kind", old.Kind)

@@ -49,7 +49,7 @@ func (p *Provider) Subscribe(ctx context.Context, itemID string, filePath string
 	}
 
 	// Seek to end
-	f.Seek(0, io.SeekEnd)
+	_, _ = f.Seek(0, io.SeekEnd)
 
 	subCtx, cancel := context.WithCancel(ctx)
 	ch := make(chan core.LogLine, 100)
@@ -77,7 +77,7 @@ func (p *Provider) Subscribe(ctx context.Context, itemID string, filePath string
 				}
 				pos, _ := f.Seek(0, io.SeekCurrent)
 				if info.Size() < pos {
-					f.Seek(0, io.SeekStart)
+					_, _ = f.Seek(0, io.SeekStart)
 					reader.Reset(f)
 				}
 				continue

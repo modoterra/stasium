@@ -65,7 +65,10 @@ func ensureDaemon() {
 	cmd := exec.Command("stasiumd")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
-	cmd.Start()
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintln(os.Stderr, "warning: could not start daemon:", err)
+		return
+	}
 	for i := 0; i < 30; i++ {
 		if _, err := os.Stat(socketPath); err == nil {
 			return

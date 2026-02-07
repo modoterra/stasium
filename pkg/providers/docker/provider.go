@@ -58,7 +58,7 @@ func New(logger *slog.Logger) *Provider {
 		logger: logger,
 	}
 
-	cli, err := dockerclient.NewClientWithOpts(dockerclient.FromEnv, dockerclient.WithAPIVersionNegotiation())
+	cli, err := dockerclient.New(dockerclient.FromEnv)
 	if err != nil {
 		logger.Warn("docker client init failed, provider disabled", "err", err)
 		return p

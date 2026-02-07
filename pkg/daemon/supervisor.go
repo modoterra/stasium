@@ -72,7 +72,7 @@ func (b *logBuffer) subscribe() <-chan core.LogLine {
 	return ch
 }
 
-func (b *logBuffer) unsubscribe(ch <-chan core.LogLine) {
+func (b *logBuffer) unsubscribe(ch <-chan core.LogLine) { //nolint:unused // reserved for log subscription lifecycle
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for i, s := range b.subs {
@@ -175,7 +175,7 @@ func (s *Supervisor) StopAll() {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, p := range s.processes {
-		s.stopProcess(p)
+		_ = s.stopProcess(p)
 	}
 }
 
@@ -376,18 +376,18 @@ func (s *Supervisor) stopProcess(p *SupervisedProcess) error {
 	p.mu.Unlock()
 
 	// Send SIGTERM to process group
-	syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 
 	done := make(chan struct{})
 	go func() {
-		cmd.Wait()
+		_ = cmd.Wait()
 		close(done)
 	}()
 
 	select {
 	case <-done:
 	case <-time.After(10 * time.Second):
-		syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
 		<-done
 	}
 

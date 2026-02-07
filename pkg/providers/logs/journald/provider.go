@@ -75,7 +75,7 @@ func (p *Provider) Subscribe(ctx context.Context, itemID string) (<-chan core.Lo
 			default:
 			}
 		}
-		cmd.Wait()
+		_ = cmd.Wait()
 		close(ch)
 		p.mu.Lock()
 		delete(p.subs, itemID)
