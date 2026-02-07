@@ -117,3 +117,8 @@ type ActionRequest struct {
 	ItemID string `json:"item_id"`
 	Action string `json:"action"` // start, stop, restart, term, kill
 }
+
+// UnmarshalData decodes the Data field into the given target.
+func (m *Message) UnmarshalData(v any) error {
+	return json.Unmarshal(m.Data, v)
+}
