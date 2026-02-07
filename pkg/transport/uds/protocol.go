@@ -118,6 +118,26 @@ type ActionRequest struct {
 	Action string `json:"action"` // start, stop, restart, term, kill
 }
 
+// UpdateManifestRequest is the payload for UpdateManifest.
+type UpdateManifestRequest struct {
+	AddItem    *ItemPatch `json:"add_item,omitempty"`
+	UpdateItem *ItemPatch `json:"update_item,omitempty"`
+	RemoveItem string     `json:"remove_item,omitempty"`
+}
+
+// ItemPatch describes adding or updating a single manifest item.
+type ItemPatch struct {
+	Name  string         `json:"name"`
+	Group string         `json:"group,omitempty"`
+	Item  map[string]any `json:"item"`
+}
+
+// UpdateManifestResponse is the response for UpdateManifest.
+type UpdateManifestResponse struct {
+	OK     bool     `json:"ok"`
+	Errors []string `json:"errors,omitempty"`
+}
+
 // UnmarshalData decodes the Data field into the given target.
 func (m *Message) UnmarshalData(v any) error {
 	return json.Unmarshal(m.Data, v)

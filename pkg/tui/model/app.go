@@ -29,6 +29,7 @@ const (
 	ModeNormal Mode = iota
 	ModeSearch
 	ModeEditor
+	ModeConfirmDelete
 )
 
 // App is the root Bubble Tea model.
@@ -53,6 +54,9 @@ type App struct {
 
 	// Editor
 	editor *EditorModel
+
+	// Delete confirmation
+	deleteTarget string
 
 	// Error display
 	statusMsg string
@@ -199,6 +203,14 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.statusMsg = msg.msg
 		return a, nil
 
+	case updateManifestResultMsg:
+		if msg.ok {
+			a.statusMsg = "manifest updated"
+		} else {
+			a.statusMsg = "error: " + strings.Join(msg.errors, "; ")
+		}
+		return a, nil
+
 	case errorMsg:
 		a.statusMsg = "error: " + msg.err.Error()
 		return a, nil
@@ -233,6 +245,27 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	// Editor mode
 	if a.mode == ModeEditor && a.editor != nil {
 		return a.editor.HandleKey(a, msg)
+	}
+
+	// Delete confirmation mode
+	if a.mode == ModeConfirmDelete {
+		switch msg.String() {
+		case "y", "Y":
+			name := a.deleteTarget
+			a.mode = ModeNormal
+			a.deleteTarget = ""
+			if a.client == nil {
+				a.statusMsg = "not connected"
+				return a, nil
+			}
+			a.statusMsg = "deleting " + name + "..."
+			return a, updateManifestCmd(a.client, uds.UpdateManifestRequest{RemoveItem: name})
+		default:
+			a.mode = ModeNormal
+			a.deleteTarget = ""
+			a.statusMsg = "delete cancelled"
+			return a, nil
+		}
 	}
 
 	// Normal mode
@@ -290,7 +323,14 @@ func (a App) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		a.mode = ModeEditor
 
 	case "d":
-		// TODO: delete with confirmation
+		if len(a.items) > 0 {
+			items := a.filteredItems()
+			if a.selectedIdx < len(items) {
+				a.deleteTarget = items[a.selectedIdx].Name
+				a.mode = ModeConfirmDelete
+				a.statusMsg = "Delete " + a.deleteTarget + "? (y/n)"
+			}
+		}
 	}
 
 	return a, nil

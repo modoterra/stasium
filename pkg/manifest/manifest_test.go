@@ -278,3 +278,62 @@ func assertHasError(t *testing.T, errs []error, substr string) {
 	}
 	t.Errorf("expected error containing %q, got: %v", substr, errs)
 }
+
+func TestSaveRoundTrip(t *testing.T) {
+	input := `
+version: 1
+project: roundtrip
+root: /app
+items:
+  web:
+    kind: systemd
+    unit: nginx.service
+  serve:
+    kind: exec
+    command: "php artisan serve"
+    dir: /app
+    restart: always
+  redis:
+    kind: docker
+    container: redis-1
+    service: redis
+`
+	m, err := Parse([]byte(input))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tmpFile := t.TempDir() + "/stasium.yaml"
+	m.FilePath = tmpFile
+
+	if err := Save(m, tmpFile); err != nil {
+		t.Fatal("save:", err)
+	}
+
+	m2, err := Load(tmpFile)
+	if err != nil {
+		t.Fatal("reload:", err)
+	}
+
+	if m2.Version != 1 {
+		t.Errorf("version: got %d, want 1", m2.Version)
+	}
+	if m2.Project != "roundtrip" {
+		t.Errorf("project: got %q, want 'roundtrip'", m2.Project)
+	}
+	if len(m2.Items) != 3 {
+		t.Fatalf("items: got %d, want 3", len(m2.Items))
+	}
+	if m2.Items["web"].Unit != "nginx.service" {
+		t.Errorf("web.unit: got %q, want 'nginx.service'", m2.Items["web"].Unit)
+	}
+	if m2.Items["serve"].Command != "php artisan serve" {
+		t.Errorf("serve.command: got %q", m2.Items["serve"].Command)
+	}
+	if m2.Items["serve"].Restart != "always" {
+		t.Errorf("serve.restart: got %q, want 'always'", m2.Items["serve"].Restart)
+	}
+	if m2.Items["redis"].Container != "redis-1" {
+		t.Errorf("redis.container: got %q", m2.Items["redis"].Container)
+	}
+}

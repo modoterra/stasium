@@ -179,6 +179,19 @@ func (s *Supervisor) StopAll() {
 	}
 }
 
+// Unregister stops and removes a process from supervision.
+func (s *Supervisor) Unregister(name string) error {
+	s.mu.Lock()
+	p, ok := s.processes[name]
+	if !ok {
+		s.mu.Unlock()
+		return fmt.Errorf("unknown process: %s", name)
+	}
+	delete(s.processes, name)
+	s.mu.Unlock()
+	return s.stopProcess(p)
+}
+
 // Status returns the current status of a process.
 func (s *Supervisor) Status(name string) (core.Status, int, time.Time) {
 	s.mu.RLock()

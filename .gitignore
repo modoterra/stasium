@@ -1,7 +1,7 @@
 # Binaries
 bin/
-stasium
-stasiumd
+/stasium
+/stasiumd
 
 # Go
 *.exe
