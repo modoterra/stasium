@@ -1,0 +1,6 @@
+#!/bin/sh
+msg_file="$1"
+if [ -z "$msg_file" ]; then
+  exit 1
+fi
+bun ./node_modules/@commitlint/cli/cli.js --edit "$msg_file"

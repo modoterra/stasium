@@ -1,0 +1,19 @@
+name: Validate Branch Name
+
+on:
+  pull_request:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate branch name
+        env:
+          BRANCH_NAME: ${{ github.head_ref }}
+        run: |
+          pattern='^(main|develop)$|^(feature|fix|chore|docs|refactor|test|ci)\/[a-z0-9._-]+$'
+          if ! echo "$BRANCH_NAME" | grep -Eq "$pattern"; then
+            echo "Invalid branch name: $BRANCH_NAME" 1>&2
+            echo "Expected: $pattern" 1>&2
+            exit 1
+          fi

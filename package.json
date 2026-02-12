@@ -1,0 +1,30 @@
+{
+  "name": "stasium",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "bun build ./index.ts --compile --outfile ./dist/stasium",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "test": "bun test",
+    "init:hooks": "bun ./scripts/install-githooks.js",
+    "release": "semantic-release"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.6.4",
+    "@commitlint/cli": "^19.3.0",
+    "@commitlint/config-conventional": "^19.2.2",
+    "@semantic-release/commit-analyzer": "^11.1.0",
+    "@semantic-release/github": "^9.2.6",
+    "@semantic-release/release-notes-generator": "^12.1.0",
+    "@types/bun": "latest",
+    "semantic-release": "^23.0.5",
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.1.79"
+  }
+}

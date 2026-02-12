@@ -1,0 +1,12 @@
+#!/bin/sh
+branch=$(git rev-parse --abbrev-ref HEAD)
+pattern='^(main|develop)$|^(feature|fix|chore|docs|refactor|test|ci)\/[a-z0-9._-]+$'
+if [ "$branch" = "HEAD" ]; then
+  exit 0
+fi
+if ! printf "%s" "$branch" | grep -Eq "$pattern"; then
+  echo "Invalid branch name: $branch" 1>&2
+  echo "Expected: $pattern" 1>&2
+  exit 1
+fi
+exit 0
