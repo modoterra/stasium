@@ -42,3 +42,15 @@ Commit and branch rules:
   `feature`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`.
 
 This project was created using `bun init` in bun v1.3.9. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
+
+## Contributing
+
+See `CONTRIBUTING.md` for contribution workflow and required checks.
+
+## Code of Conduct
+
+See `CODE_OF_CONDUCT.md`.
+
+## License
+
+MIT © 2026 Modoterra Corporation. See `LICENSE`.
