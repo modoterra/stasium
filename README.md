@@ -47,8 +47,6 @@ This project was created using `bun init` in bun v1.3.9. [Bun](https://bun.com) 
 
 See `CONTRIBUTING.md` for contribution workflow and required checks.
 
-Modoterra organization maintainers may bypass these requirements when necessary to keep deployments on schedule.
-
 ## Code of Conduct
 
 See `CODE_OF_CONDUCT.md`.
