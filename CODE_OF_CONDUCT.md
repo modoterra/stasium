@@ -32,6 +32,6 @@ Enforcement decisions are final.
 
 ## Reporting
 
-If you experience or witness unacceptable behavior, report it privately to project maintainers.
+If you experience or witness unacceptable behavior, report it privately to project maintainers at [oss@modoterra.xyz](mailto:oss@modoterra.xyz).
 
 Please include as much detail as possible so maintainers can investigate appropriately.
