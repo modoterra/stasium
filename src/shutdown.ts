@@ -40,6 +40,7 @@ export const createShutdownHandler = ({
       const clean = await manager.waitForExit(EXIT_WAIT_MS);
       if (!clean) {
         await manager.forceStopAll();
+        await manager.waitForExit(EXIT_WAIT_MS);
       }
       await removeServicePidFiles(cwd, getServicePids());
       await removePidFilesForServices(
