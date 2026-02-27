@@ -16,13 +16,33 @@ command = ["php", "artisan", "serve"]
 working_dir = "."
 
 [[strategy]]
+id = "laravel-octane"
+label = "Laravel Octane server"
+priority = 218
+default_selected = false
+
+[strategy.when]
+all_files = ["artisan", "composer.json"]
+all_json_paths = [{ file = "composer.json", path = "require.laravel/framework" }]
+any_json_paths = [
+  { file = "composer.json", path = "require.laravel/octane" },
+  { file = "composer.json", path = "require-dev.laravel/octane" },
+]
+
+[strategy.service]
+name = "octane"
+command = ["php", "artisan", "octane:start"]
+working_dir = "."
+
+[[strategy]]
 id = "laravel-queue"
 label = "Laravel queue worker"
-priority = 210
+priority = 215
 default_selected = true
 
 [strategy.when]
-all_files = ["artisan", "config/queue.php"]
+all_files = ["artisan", "composer.json"]
+all_json_paths = [{ file = "composer.json", path = "require.laravel/framework" }]
 
 [strategy.service]
 name = "queue"
@@ -31,17 +51,78 @@ working_dir = "."
 depends_on_ids = ["laravel-app"]
 
 [[strategy]]
+id = "laravel-horizon"
+label = "Laravel Horizon"
+priority = 214
+default_selected = false
+
+[strategy.when]
+all_files = ["artisan", "composer.json"]
+all_json_paths = [{ file = "composer.json", path = "require.laravel/framework" }]
+any_json_paths = [
+  { file = "composer.json", path = "require.laravel/horizon" },
+  { file = "composer.json", path = "require-dev.laravel/horizon" },
+]
+
+[strategy.service]
+name = "horizon"
+command = ["php", "artisan", "horizon"]
+working_dir = "."
+depends_on_ids = ["laravel-app"]
+
+[[strategy]]
 id = "laravel-scheduler"
 label = "Laravel scheduler"
-priority = 205
+priority = 212
 default_selected = true
 
 [strategy.when]
-all_files = ["artisan", "app/Console/Kernel.php"]
+all_files = ["artisan", "composer.json"]
+all_json_paths = [{ file = "composer.json", path = "require.laravel/framework" }]
 
 [strategy.service]
 name = "scheduler"
 command = ["php", "artisan", "schedule:work"]
+working_dir = "."
+depends_on_ids = ["laravel-app"]
+
+[[strategy]]
+id = "laravel-reverb"
+label = "Laravel Reverb"
+priority = 211
+default_selected = true
+
+[strategy.when]
+all_files = ["artisan", "composer.json"]
+all_json_paths = [{ file = "composer.json", path = "require.laravel/framework" }]
+any_json_paths = [
+  { file = "composer.json", path = "require.laravel/reverb" },
+  { file = "composer.json", path = "require-dev.laravel/reverb" },
+]
+
+[strategy.service]
+name = "reverb"
+command = ["php", "artisan", "reverb:start"]
+working_dir = "."
+depends_on_ids = ["laravel-app"]
+
+[[strategy]]
+id = "laravel-pulse-check"
+label = "Laravel Pulse check"
+priority = 210
+default_selected = false
+
+[strategy.when]
+all_files = ["artisan", "composer.json"]
+all_json_paths = [{ file = "composer.json", path = "require.laravel/framework" }]
+any_json_paths = [
+  { file = "composer.json", path = "require.laravel/pulse" },
+  { file = "composer.json", path = "require-dev.laravel/pulse" },
+]
+
+[strategy.service]
+name = "pulse"
+command = ["php", "artisan", "pulse:check"]
 working_dir = "."
 depends_on_ids = ["laravel-app"]
 
