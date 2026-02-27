@@ -1,13 +1,8 @@
 import { ManifestError } from "./manifest";
 import type { CommandSpec } from "./types";
 
-type Token = {
-  value: string;
-  quoted: boolean;
-};
-
-const tokenize = (input: string): Token[] => {
-  const tokens: Token[] = [];
+const tokenize = (input: string): string[] => {
+  const tokens: string[] = [];
   let current = "";
   let inSingle = false;
   let inDouble = false;
@@ -32,7 +27,7 @@ const tokenize = (input: string): Token[] => {
     }
     if (!inSingle && !inDouble && /\s/.test(ch)) {
       if (current.length > 0) {
-        tokens.push({ value: current, quoted: false });
+        tokens.push(current);
         current = "";
       }
       continue;
@@ -45,7 +40,7 @@ const tokenize = (input: string): Token[] => {
   }
 
   if (current.length > 0) {
-    tokens.push({ value: current, quoted: false });
+    tokens.push(current);
   }
 
   return tokens;
@@ -80,7 +75,7 @@ export const normalizeCommand = (command: CommandSpec): string[] => {
   }
 
   const tokens = tokenize(raw);
-  const argv = tokens.map((token) => token.value);
+  const argv = [...tokens];
   assertNoShellOperators(argv, raw);
   return argv;
 };

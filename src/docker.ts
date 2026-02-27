@@ -1,16 +1,9 @@
 import { resolve } from "node:path";
 import { LogBuffer } from "./log-buffer";
+import { fileExists } from "./shared";
 import type { DockerService, DockerServiceState } from "./types";
 
 const COMPOSE_FILES = ["compose.yml", "compose.yaml", "docker-compose.yml", "docker-compose.yaml"];
-
-const fileExists = async (path: string): Promise<boolean> => {
-  try {
-    return await Bun.file(path).exists();
-  } catch {
-    return false;
-  }
-};
 
 const splitLines = (text: string): string[] =>
   text

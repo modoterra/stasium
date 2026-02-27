@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { ServiceGraphError, validateServiceGraph } from "./service-graph";
+import { getErrorMessage } from "./shared";
 import type { Manifest, ServiceConfig } from "./types";
 
 type RawManifest = {
@@ -116,8 +117,7 @@ export const loadManifest = async (path?: string): Promise<Manifest> => {
   try {
     parsed = Bun.TOML.parse(contents) as RawManifest;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new ManifestError(`Invalid TOML: ${message}`);
+    throw new ManifestError(`Invalid TOML: ${getErrorMessage(error)}`);
   }
 
   const services = parsed.service ?? [];
@@ -211,8 +211,7 @@ export const parseServiceBlock = (toml: string): ServiceConfig => {
   try {
     parsed = Bun.TOML.parse(toml) as RawManifest;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new ManifestError(`Invalid TOML: ${message}`);
+    throw new ManifestError(`Invalid TOML: ${getErrorMessage(error)}`);
   }
 
   const services = parsed.service ?? [];

@@ -1,4 +1,5 @@
 import { normalizeCommand } from "./command";
+import { getErrorMessage } from "./shared";
 import type { CommandSpec, LogEntry, ServiceConfig, ServiceState } from "./types";
 
 export type ServiceEvent =
@@ -125,10 +126,9 @@ export class ServiceProcess {
       this.lastExitCode = 1;
       this.lastSignal = null;
       this.setState("FAILED");
-      const message = error instanceof Error ? error.message : String(error);
       this.emit({
         type: "log",
-        entry: { timestamp: timestamp(), line: message, stream: "stderr" },
+        entry: { timestamp: timestamp(), line: getErrorMessage(error), stream: "stderr" },
       });
       return;
     }
@@ -146,10 +146,9 @@ export class ServiceProcess {
       this.lastExitCode = 1;
       this.lastSignal = null;
       this.setState("FAILED");
-      const message = error instanceof Error ? error.message : String(error);
       this.emit({
         type: "log",
-        entry: { timestamp: timestamp(), line: message, stream: "stderr" },
+        entry: { timestamp: timestamp(), line: getErrorMessage(error), stream: "stderr" },
       });
       return;
     }
@@ -172,10 +171,9 @@ export class ServiceProcess {
         this.emit({ type: "exit", code, signal: this.lastSignal });
       })
       .catch((error) => {
-        const message = error instanceof Error ? error.message : String(error);
         this.emit({
           type: "log",
-          entry: { timestamp: timestamp(), line: message, stream: "stderr" },
+          entry: { timestamp: timestamp(), line: getErrorMessage(error), stream: "stderr" },
         });
         this.setState("FAILED");
       });
@@ -222,10 +220,9 @@ export class ServiceProcess {
       this.flushRemainder(source);
     };
     readLoop().catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
       this.emit({
         type: "log",
-        entry: { timestamp: timestamp(), line: message, stream: "stderr" },
+        entry: { timestamp: timestamp(), line: getErrorMessage(error), stream: "stderr" },
       });
     });
   }

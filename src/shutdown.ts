@@ -3,6 +3,15 @@ import type { ServiceManager } from "./service-manager";
 import type { ServicePid } from "./types";
 
 const EXIT_WAIT_MS = 1500;
+const SHUTDOWN_SIGNALS: NodeJS.Signals[] = [
+  "SIGINT",
+  "SIGTERM",
+  "SIGHUP",
+  "SIGQUIT",
+  "SIGBREAK",
+  "SIGUSR1",
+  "SIGUSR2",
+];
 
 export type ShutdownContext = {
   cwd: string;
@@ -79,16 +88,7 @@ export const createShutdownHandler = ({
   };
 
   const install = (): void => {
-    const signals: NodeJS.Signals[] = [
-      "SIGINT",
-      "SIGTERM",
-      "SIGHUP",
-      "SIGQUIT",
-      "SIGBREAK",
-      "SIGUSR1",
-      "SIGUSR2",
-    ];
-    for (const signal of signals) {
+    for (const signal of SHUTDOWN_SIGNALS) {
       process.on(signal, handleSignal);
     }
     process.on("beforeExit", handleBeforeExit);
@@ -98,16 +98,7 @@ export const createShutdownHandler = ({
   };
 
   const uninstall = (): void => {
-    const signals: NodeJS.Signals[] = [
-      "SIGINT",
-      "SIGTERM",
-      "SIGHUP",
-      "SIGQUIT",
-      "SIGBREAK",
-      "SIGUSR1",
-      "SIGUSR2",
-    ];
-    for (const signal of signals) {
+    for (const signal of SHUTDOWN_SIGNALS) {
       process.off(signal, handleSignal);
     }
     process.off("beforeExit", handleBeforeExit);
