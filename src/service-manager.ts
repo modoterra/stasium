@@ -118,68 +118,65 @@ export class ServiceManager {
   }
 
   async startAll(): Promise<void> {
-    const orderedNames = this.getTopologicalOrderNames();
-    for (const name of orderedNames) {
-      const service = this.getServiceByName(name);
-      if (!service) continue;
+    await this.forEachResolvedService(this.getTopologicalOrderNames(), async (service) => {
       await this.startService(service);
-    }
+    });
   }
 
   async stopAll(): Promise<void> {
-    const orderedNames = this.getTopologicalOrderNames().reverse();
-    for (const name of orderedNames) {
-      const service = this.getServiceByName(name);
-      if (!service) continue;
-      await this.stopService(service);
-    }
+    await this.forEachResolvedService(
+      this.getTopologicalOrderNames().reverse(),
+      async (service) => {
+        await this.stopService(service);
+      },
+    );
   }
 
   async forceStopAll(): Promise<void> {
-    const orderedNames = this.getTopologicalOrderNames().reverse();
-    for (const name of orderedNames) {
-      const service = this.getServiceByName(name);
-      if (!service) continue;
-      this.suppressAutoRestart(service);
-      await service.forceStop();
-    }
+    await this.forEachResolvedService(
+      this.getTopologicalOrderNames().reverse(),
+      async (service) => {
+        this.suppressAutoRestart(service);
+        await service.forceStop();
+      },
+    );
   }
 
   async startSelected(): Promise<void> {
     const service = this.services[this.selectedIndex];
     if (!service) return;
 
-    const order = this.getStartOrderForService(service.config.name);
-    for (const name of order) {
-      const nextService = this.getServiceByName(name);
-      if (!nextService) continue;
-      await this.startService(nextService);
-    }
+    await this.forEachResolvedService(
+      this.getStartOrderForService(service.config.name),
+      async (next) => {
+        await this.startService(next);
+      },
+    );
   }
 
   async stopSelected(): Promise<void> {
     const service = this.services[this.selectedIndex];
     if (!service) return;
 
-    const order = this.getStopOrderForService(service.config.name);
-    for (const name of order) {
-      const nextService = this.getServiceByName(name);
-      if (!nextService) continue;
-      await this.stopService(nextService);
-    }
+    await this.forEachResolvedService(
+      this.getStopOrderForService(service.config.name),
+      async (next) => {
+        await this.stopService(next);
+      },
+    );
   }
 
   async killSelected(): Promise<void> {
     const service = this.services[this.selectedIndex];
     if (!service) return;
 
-    const order = this.getStopOrderForService(service.config.name);
-    for (const name of order) {
-      const nextService = this.getServiceByName(name);
-      if (!nextService) continue;
-      this.suppressAutoRestart(nextService);
-      await nextService.forceStop();
-    }
+    await this.forEachResolvedService(
+      this.getStopOrderForService(service.config.name),
+      async (next) => {
+        this.suppressAutoRestart(next);
+        await next.forceStop();
+      },
+    );
   }
 
   async restartSelected(): Promise<void> {
@@ -188,12 +185,12 @@ export class ServiceManager {
     const view = this.views[this.selectedIndex];
     await this.stopService(service);
 
-    const order = this.getStartOrderForService(service.config.name);
-    for (const name of order) {
-      const nextService = this.getServiceByName(name);
-      if (!nextService) continue;
-      await this.startService(nextService);
-    }
+    await this.forEachResolvedService(
+      this.getStartOrderForService(service.config.name),
+      async (next) => {
+        await this.startService(next);
+      },
+    );
 
     if (view) {
       view.restartCount += 1;
@@ -221,12 +218,9 @@ export class ServiceManager {
     });
     this.unsubscribers.push(this.subscribeService(process));
 
-    const order = this.getStartOrderForService(config.name);
-    for (const name of order) {
-      const nextService = this.getServiceByName(name);
-      if (!nextService) continue;
-      await this.startService(nextService);
-    }
+    await this.forEachResolvedService(this.getStartOrderForService(config.name), async (next) => {
+      await this.startService(next);
+    });
 
     this.notify();
   }
@@ -286,12 +280,9 @@ export class ServiceManager {
 
     this.unsubscribers[index] = this.subscribeService(newProcess);
 
-    const order = this.getStartOrderForService(config.name);
-    for (const name of order) {
-      const nextService = this.getServiceByName(name);
-      if (!nextService) continue;
-      await this.startService(nextService);
-    }
+    await this.forEachResolvedService(this.getStartOrderForService(config.name), async (next) => {
+      await this.startService(next);
+    });
 
     this.notify();
   }
@@ -301,7 +292,7 @@ export class ServiceManager {
     while (Date.now() < deadline) {
       const anyRunning = this.services.some((service) => service.isRunning());
       if (!anyRunning) return true;
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, WAIT_INTERVAL_MS));
     }
     return false;
   }
@@ -349,52 +340,52 @@ export class ServiceManager {
     });
   }
 
-  private assertValidConfigGraph(configs: ServiceConfig[]): void {
+  private async forEachResolvedService(
+    names: string[],
+    action: (service: ServiceProcess) => Promise<void>,
+  ): Promise<void> {
+    for (const name of names) {
+      const service = this.getServiceByName(name);
+      if (!service) continue;
+      await action(service);
+    }
+  }
+
+  private runGraphOperation<T>(operation: () => T): T {
     try {
-      validateServiceGraph(configs);
+      return operation();
     } catch (error) {
       if (error instanceof ServiceGraphError) {
         throw new ServiceManagerError(error.message);
       }
       throw error;
     }
+  }
+
+  private assertValidConfigGraph(configs: ServiceConfig[]): void {
+    this.runGraphOperation(() => {
+      validateServiceGraph(configs);
+    });
   }
 
   private getTopologicalOrderNames(): string[] {
-    try {
-      return getTopologicalServiceOrder(this.getConfigs());
-    } catch (error) {
-      if (error instanceof ServiceGraphError) {
-        throw new ServiceManagerError(error.message);
-      }
-      throw error;
-    }
+    return this.runGraphOperation(() => getTopologicalServiceOrder(this.getConfigs()));
   }
 
   private getStartOrderForService(name: string): string[] {
-    try {
+    return this.runGraphOperation(() => {
       const closure = getDependencyClosure(this.getConfigs(), name);
       return this.getTopologicalOrderNames().filter((serviceName) => closure.has(serviceName));
-    } catch (error) {
-      if (error instanceof ServiceGraphError) {
-        throw new ServiceManagerError(error.message);
-      }
-      throw error;
-    }
+    });
   }
 
   private getStopOrderForService(name: string): string[] {
-    try {
+    return this.runGraphOperation(() => {
       const closure = getDependentsClosure(this.getConfigs(), name);
       return this.getTopologicalOrderNames()
         .filter((serviceName) => closure.has(serviceName))
         .reverse();
-    } catch (error) {
-      if (error instanceof ServiceGraphError) {
-        throw new ServiceManagerError(error.message);
-      }
-      throw error;
-    }
+    });
   }
 
   private getServiceByName(name: string): ServiceProcess | null {

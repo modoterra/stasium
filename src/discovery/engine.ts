@@ -19,65 +19,68 @@ const interpolate = (template: string, captures: Record<string, string>): string
   return rendered;
 };
 
+const matchesAll = async <T>(
+  items: T[],
+  predicate: (item: T) => Promise<boolean>,
+): Promise<boolean> => {
+  for (const item of items) {
+    if (!(await predicate(item))) return false;
+  }
+  return true;
+};
+
+const matchesAnyOrEmpty = async <T>(
+  items: T[],
+  predicate: (item: T) => Promise<boolean>,
+): Promise<boolean> => {
+  if (items.length === 0) return true;
+  for (const item of items) {
+    if (await predicate(item)) return true;
+  }
+  return false;
+};
+
 const matchesWhen = async (when: StrategyWhen, ctx: DiscoveryProbeContext): Promise<boolean> => {
-  for (const path of when.all_files) {
-    if (!(await ctx.fileExists(path))) return false;
+  if (!(await matchesAll(when.all_files, async (path) => await ctx.fileExists(path)))) {
+    return false;
   }
 
-  if (when.any_files.length > 0) {
-    let found = false;
-    for (const path of when.any_files) {
-      if (await ctx.fileExists(path)) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) return false;
+  if (!(await matchesAnyOrEmpty(when.any_files, async (path) => await ctx.fileExists(path)))) {
+    return false;
   }
 
-  for (const probe of when.all_json_paths) {
-    if (!(await ctx.matchesJsonPath(probe))) return false;
+  if (!(await matchesAll(when.all_json_paths, async (probe) => await ctx.matchesJsonPath(probe)))) {
+    return false;
   }
 
-  if (when.any_json_paths.length > 0) {
-    let found = false;
-    for (const probe of when.any_json_paths) {
-      if (await ctx.matchesJsonPath(probe)) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) return false;
+  if (
+    !(await matchesAnyOrEmpty(
+      when.any_json_paths,
+      async (probe) => await ctx.matchesJsonPath(probe),
+    ))
+  ) {
+    return false;
   }
 
-  for (const probe of when.all_toml_paths) {
-    if (!(await ctx.matchesTomlPath(probe))) return false;
+  if (!(await matchesAll(when.all_toml_paths, async (probe) => await ctx.matchesTomlPath(probe)))) {
+    return false;
   }
 
-  if (when.any_toml_paths.length > 0) {
-    let found = false;
-    for (const probe of when.any_toml_paths) {
-      if (await ctx.matchesTomlPath(probe)) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) return false;
+  if (
+    !(await matchesAnyOrEmpty(
+      when.any_toml_paths,
+      async (probe) => await ctx.matchesTomlPath(probe),
+    ))
+  ) {
+    return false;
   }
 
-  for (const probe of when.all_regex) {
-    if (!(await ctx.matchesRegex(probe))) return false;
+  if (!(await matchesAll(when.all_regex, async (probe) => await ctx.matchesRegex(probe)))) {
+    return false;
   }
 
-  if (when.any_regex.length > 0) {
-    let found = false;
-    for (const probe of when.any_regex) {
-      if (await ctx.matchesRegex(probe)) {
-        found = true;
-        break;
-      }
-    }
-    if (!found) return false;
+  if (!(await matchesAnyOrEmpty(when.any_regex, async (probe) => await ctx.matchesRegex(probe)))) {
+    return false;
   }
 
   return true;

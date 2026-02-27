@@ -51,7 +51,6 @@ const resolveTomlFirstExisting = async (
 };
 
 const resolveCapture = async (
-  strategy: DiscoveryStrategy,
   capture: StrategyCapture,
   ctx: DiscoveryProbeContext,
 ): Promise<string | null> => {
@@ -78,7 +77,7 @@ export const resolveStrategyCaptures = async (
   const values: Record<string, string> = {};
 
   for (const capture of strategy.capture) {
-    const value = await resolveCapture(strategy, capture, ctx);
+    const value = await resolveCapture(capture, ctx);
     if (value === null) {
       return {
         values,
