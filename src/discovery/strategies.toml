@@ -1,0 +1,197 @@
+version = 1
+
+[[strategy]]
+id = "laravel-app"
+label = "Laravel app server"
+priority = 220
+default_selected = true
+
+[strategy.when]
+all_files = ["artisan", "composer.json"]
+all_json_paths = [{ file = "composer.json", path = "require.laravel/framework" }]
+
+[strategy.service]
+name = "app"
+command = ["php", "artisan", "serve"]
+working_dir = "."
+
+[[strategy]]
+id = "laravel-queue"
+label = "Laravel queue worker"
+priority = 210
+default_selected = true
+
+[strategy.when]
+all_files = ["artisan", "config/queue.php"]
+
+[strategy.service]
+name = "queue"
+command = ["php", "artisan", "queue:work"]
+working_dir = "."
+depends_on_ids = ["laravel-app"]
+
+[[strategy]]
+id = "laravel-scheduler"
+label = "Laravel scheduler"
+priority = 205
+default_selected = true
+
+[strategy.when]
+all_files = ["artisan", "app/Console/Kernel.php"]
+
+[strategy.service]
+name = "scheduler"
+command = ["php", "artisan", "schedule:work"]
+working_dir = "."
+depends_on_ids = ["laravel-app"]
+
+[[strategy]]
+id = "rails-app"
+label = "Rails server"
+priority = 190
+default_selected = true
+
+[strategy.when]
+all_files = ["Gemfile", "config/application.rb", "bin/rails"]
+
+[strategy.service]
+name = "app"
+command = ["bin/rails", "server"]
+working_dir = "."
+
+[[strategy]]
+id = "django-app"
+label = "Django development server"
+priority = 180
+default_selected = true
+
+[strategy.when]
+all_files = ["manage.py"]
+any_files = ["requirements.txt", "pyproject.toml", "Pipfile"]
+
+[strategy.service]
+name = "app"
+command = ["python", "manage.py", "runserver"]
+working_dir = "."
+
+[[strategy]]
+id = "node-dev"
+label = "Node dev server"
+priority = 170
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start", "scripts.watch", "scripts.serve"]
+
+[strategy.service]
+name = "frontend"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "fastapi-main"
+label = "FastAPI uvicorn (main.py)"
+priority = 165
+default_selected = true
+
+[strategy.when]
+all_files = ["main.py"]
+any_regex = [{ file = "main.py", pattern = "FastAPI\\s*\\(" }]
+
+[strategy.service]
+name = "api"
+command = ["python", "-m", "uvicorn", "main:app", "--reload"]
+working_dir = "."
+
+[[strategy]]
+id = "fastapi-app-main"
+label = "FastAPI uvicorn (app/main.py)"
+priority = 165
+default_selected = true
+
+[strategy.when]
+all_files = ["app/main.py"]
+any_regex = [{ file = "app/main.py", pattern = "FastAPI\\s*\\(" }]
+
+[strategy.service]
+name = "api"
+command = ["python", "-m", "uvicorn", "app.main:app", "--reload"]
+working_dir = "."
+
+[[strategy]]
+id = "node-worker"
+label = "Node background worker"
+priority = 150
+default_selected = false
+
+[strategy.when]
+all_files = ["package.json"]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing"
+file = "package.json"
+paths = ["scripts.worker", "scripts.queue", "scripts.jobs", "scripts.background"]
+
+[strategy.service]
+name = "worker"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "go-air"
+label = "Go live reload"
+priority = 140
+default_selected = true
+
+[strategy.when]
+all_files = ["go.mod", ".air.toml"]
+
+[strategy.service]
+name = "app"
+command = ["air"]
+working_dir = "."
+
+[[strategy]]
+id = "go-run"
+label = "Go run"
+priority = 120
+default_selected = false
+
+[strategy.when]
+all_files = ["go.mod"]
+any_files = ["main.go", "cmd/main.go"]
+
+[strategy.service]
+name = "app"
+command = ["go", "run", "."]
+working_dir = "."
+
+[[strategy]]
+id = "make-dev"
+label = "Make dev target"
+priority = 90
+default_selected = false
+
+[strategy.when]
+all_files = ["Makefile"]
+any_regex = [{ file = "Makefile", pattern = "^dev\\s*:", flags = "m" }]
+
+[strategy.service]
+name = "app"
+command = ["make", "dev"]
+working_dir = "."

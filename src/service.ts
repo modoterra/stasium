@@ -90,10 +90,6 @@ export class ServiceProcess {
     return () => this.subscribers.delete(handler);
   }
 
-  clearSubscriptions(): void {
-    this.subscribers.clear();
-  }
-
   getState(): ServiceState {
     return this.state;
   }

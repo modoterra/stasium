@@ -126,13 +126,6 @@ export const loadManifest = async (path?: string): Promise<Manifest> => {
   }
 
   const normalized = services.map((service, index) => normalizeService(service, index));
-  const names = new Set<string>();
-  for (const service of normalized) {
-    if (names.has(service.name)) {
-      throw new ManifestError(`Duplicate service name: ${service.name}`);
-    }
-    names.add(service.name);
-  }
 
   try {
     validateServiceGraph(normalized);

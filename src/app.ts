@@ -2,10 +2,17 @@ import { resolve } from "node:path";
 import { type KeyEvent, createCliRenderer } from "@opentui/core";
 import { DockerManager, detectComposeFile } from "./docker";
 import { FocusManager } from "./focus";
-import { detectServices, writeManifest } from "./init";
+import {
+  DiscoverySelection,
+  detectServices,
+  finalizeSelection,
+  formatServiceSummary,
+  writeManifest,
+} from "./init";
 import { loadManifest, parseServiceBlock, renderServiceBlock, saveManifest } from "./manifest";
 import { cleanupExistingPids, syncPidFiles } from "./pidfile";
 import { ServiceManager } from "./service-manager";
+import { fileExists, getErrorMessage } from "./shared";
 import { createShutdownHandler } from "./shutdown";
 import { type UiControls, buildInitUi, buildUi } from "./ui";
 
@@ -17,12 +24,56 @@ type ShutdownController = {
   uninstall: () => void;
 };
 
-const manifestExists = async (path: string): Promise<boolean> => {
-  try {
-    return await Bun.file(path).exists();
-  } catch {
-    return false;
-  }
+const setupInitSelectionKeybindings = (
+  renderer: Awaited<ReturnType<typeof createCliRenderer>>,
+  selection: DiscoverySelection,
+  onConfirm: () => Promise<void>,
+) => {
+  let creatingManifest = false;
+
+  renderer.keyInput.on("keypress", async (key: KeyEvent) => {
+    if (key.eventType === "release") return;
+
+    if (key.ctrl && key.name === "c") {
+      renderer.destroy();
+      return;
+    }
+
+    switch (key.name) {
+      case "up":
+        selection.moveCursor(-1);
+        return;
+      case "down":
+        selection.moveCursor(1);
+        return;
+      case "space":
+        selection.toggleCursor();
+        return;
+      case "a":
+        selection.selectAll();
+        return;
+      case "n":
+        selection.selectNone();
+        return;
+      case "enter":
+      case "return": {
+        if (creatingManifest) return;
+        creatingManifest = true;
+        try {
+          await onConfirm();
+        } finally {
+          creatingManifest = false;
+        }
+        return;
+      }
+      case "q":
+      case "escape":
+        renderer.destroy();
+        return;
+      default:
+        return;
+    }
+  });
 };
 
 const setupKeybindings = (
@@ -152,8 +203,7 @@ const setupKeybindings = (
         await saveManifest(manifestPath, manager.getConfigs());
         await syncPids();
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        controls.setEditError(message);
+        controls.setEditError(getErrorMessage(error));
         return;
       }
       controls.hideEditOverlay();
@@ -185,8 +235,7 @@ const setupKeybindings = (
         controls.hideAddOverlay();
         focusManager.setMode("normal");
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        controls.setAddError(message);
+        controls.setAddError(getErrorMessage(error));
       }
       return;
     }
@@ -360,33 +409,71 @@ const startApp = async (
 export const run = async () => {
   const args = process.argv.slice(2);
   if (args[0] === "init") {
+    const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
+    if (await fileExists(MANIFEST_PATH)) {
+      console.error(`Manifest already exists: ${manifestPath}`);
+      process.exitCode = 1;
+      return;
+    }
+
+    const teardownRef: { current: (() => void) | null } = { current: null };
+
     try {
-      const { initProject, formatServiceSummary } = await import("./init");
-      const result = await initProject(process.cwd(), MANIFEST_PATH);
-      console.log(`Created ${result.manifestPath}`);
-      if (result.services.length > 0) {
-        console.log("Detected services:");
-        for (const service of result.services) {
-          console.log(`- ${formatServiceSummary(service)}`);
+      const detected = await detectServices(process.cwd());
+      const selection = new DiscoverySelection(detected.candidates);
+      const renderer = await createCliRenderer({
+        exitOnCtrlC: false,
+        onDestroy: () => {
+          teardownRef.current?.();
+          teardownRef.current = null;
+        },
+      });
+
+      teardownRef.current = buildInitUi(renderer, {
+        selection,
+        warnings: detected.warnings,
+      });
+
+      setupInitSelectionKeybindings(renderer, selection, async () => {
+        try {
+          const finalized = finalizeSelection(selection);
+          await writeManifest(manifestPath, finalized.services);
+          renderer.destroy();
+
+          console.log(`Created ${manifestPath}`);
+          if (finalized.services.length > 0) {
+            console.log("Detected services:");
+            for (const service of finalized.services) {
+              console.log(`- ${formatServiceSummary(service)}`);
+            }
+          } else {
+            console.log("No services selected. Edit stasium.toml to add services.");
+          }
+
+          const warnings = [...detected.warnings, ...finalized.warnings];
+          if (warnings.length > 0) {
+            console.log("Warnings:");
+            for (const warning of warnings) {
+              console.log(`- ${warning}`);
+            }
+          }
+        } catch (error) {
+          console.error(getErrorMessage(error));
+          process.exitCode = 1;
+          renderer.destroy();
         }
-      } else {
-        console.log("No services detected. Edit stasium.toml to add services.");
-      }
-      if (result.warnings.length > 0) {
-        console.log("Warnings:");
-        for (const warning of result.warnings) {
-          console.log(`- ${warning}`);
-        }
-      }
+      });
+
+      renderer.start();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error(message);
+      console.error(getErrorMessage(error));
       process.exitCode = 1;
     }
+
     return;
   }
 
-  const hasManifest = await manifestExists(MANIFEST_PATH);
+  const hasManifest = await fileExists(MANIFEST_PATH);
   const teardownRef: { current: (() => void) | null } = { current: null };
   const shutdownRef: { current: ShutdownController | null } = { current: null };
 
@@ -406,32 +493,25 @@ export const run = async () => {
 
   // No manifest found — show the init TUI
   const detected = await detectServices(process.cwd());
+  const selection = new DiscoverySelection(detected.candidates);
   const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
 
-  teardownRef.current = buildInitUi(renderer, detected);
+  teardownRef.current = buildInitUi(renderer, {
+    selection,
+    warnings: detected.warnings,
+  });
 
-  renderer.keyInput.on("keypress", async (key: KeyEvent) => {
-    if (key.eventType === "release") return;
-    if (key.ctrl && key.name === "c") {
+  setupInitSelectionKeybindings(renderer, selection, async () => {
+    try {
+      const finalized = finalizeSelection(selection);
+      await writeManifest(manifestPath, finalized.services);
+      teardownRef.current?.();
+      teardownRef.current = null;
+      await startApp(renderer, teardownRef, shutdownRef);
+    } catch (error) {
+      console.error(getErrorMessage(error));
+      process.exitCode = 1;
       renderer.destroy();
-      return;
-    }
-
-    switch (key.name) {
-      case "enter":
-      case "return": {
-        await writeManifest(manifestPath, detected.services);
-        teardownRef.current?.();
-        teardownRef.current = null;
-        await startApp(renderer, teardownRef, shutdownRef);
-        break;
-      }
-      case "q":
-      case "escape":
-        renderer.destroy();
-        break;
-      default:
-        break;
     }
   });
 

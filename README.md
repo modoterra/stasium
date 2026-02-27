@@ -18,6 +18,14 @@ To initialize a manifest:
 bun run index.ts init
 ```
 
+`init` opens an interactive selector of detected services. Use `up/down` to move,
+`space` to toggle, `a` to select all, `n` to clear, and `enter` to create `stasium.toml`.
+
+Discovery strategies are data-driven via TOML:
+
+- Built-in catalog: `src/discovery/strategies.toml`
+- Optional project overrides: `.stasium/discovery.toml`
+
 Development commands:
 
 ```bash

@@ -101,25 +101,11 @@ export class FocusManager {
     this.notify();
   }
 
-  getPanels(): PanelId[] {
-    return [...this.panels];
-  }
-
-  hasPanel(panel: PanelId): boolean {
-    return this.panels.includes(panel);
-  }
-
   getShortcuts(): Shortcut[] {
     const modeShortcuts = MODE_SHORTCUTS[this.mode];
     if (modeShortcuts) return modeShortcuts;
     const panelShortcuts = PANEL_SHORTCUTS[this.activePanel] ?? [];
     return [...panelShortcuts, ...GLOBAL_SHORTCUTS];
-  }
-
-  getFooterText(): string {
-    return this.getShortcuts()
-      .map((s) => `${s.key} ${s.label}`)
-      .join("  ");
   }
 
   isPanelActive(panel: PanelId): boolean {

@@ -265,9 +265,3 @@ export const removePidFilesForServices = async (
     }),
   );
 };
-
-export const removeAllPidFiles = async (cwd: string): Promise<void> => {
-  const dir = getPidDir(cwd);
-  const existing = await listPidFiles(dir);
-  await Promise.all(existing.map((path) => safeUnlink(path)));
-};

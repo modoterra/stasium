@@ -8,11 +8,12 @@ import {
   TextRenderable,
   TextareaRenderable,
 } from "@opentui/core";
+import type { DiscoverySelection, SelectionItem } from "./discovery";
 import type { DockerManager } from "./docker";
 import type { FocusManager } from "./focus";
-import type { DetectResult } from "./init";
 import type { ServiceManager, ServiceView } from "./service-manager";
-import type { DockerService, Manifest, PanelId, ServiceConfig, Shortcut } from "./types";
+import { formatCommandSpec } from "./shared";
+import type { DockerService, Manifest, PanelId, Shortcut } from "./types";
 
 interface Palette {
   active: string;
@@ -54,6 +55,7 @@ const light: Palette = {
 };
 
 const getTheme = (mode: "dark" | "light" | null): Palette => (mode === "light" ? light : dark);
+const VERSION_LABEL = "Stasium v0.2.3 (32423)";
 
 const stateColor = (state: ServiceView["state"], palette: Palette): string => {
   switch (state) {
@@ -94,11 +96,6 @@ const formatDockerState = (state: DockerService["state"]) => state.padEnd(10, " 
 const formatExit = (exit: number | null) => {
   if (exit === null) return "--";
   return String(exit);
-};
-
-const formatCommand = (command: ServiceConfig["command"]): string => {
-  if (Array.isArray(command)) return command.join(" ");
-  return command;
 };
 
 const createLogSyntaxStyle = (): SyntaxStyle => {
@@ -174,7 +171,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   });
 
   const versionText = new TextRenderable(renderer, {
-    content: "Stasium v0.2.3 (32423)",
+    content: VERSION_LABEL,
     fg: palette.active,
   });
 
@@ -916,7 +913,21 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   return { teardown, controls };
 };
 
-export const buildInitUi = (renderer: CliRenderer, detected: DetectResult): (() => void) => {
+interface InitUiOptions {
+  selection: DiscoverySelection;
+  warnings: string[];
+}
+
+const formatInitSelectionLine = (item: SelectionItem, active: boolean): string => {
+  const cursor = active ? ">" : " ";
+  const selected = item.selected ? "[x]" : "[ ]";
+  const serviceName = item.candidate.service.name;
+  const command = formatCommandSpec(item.candidate.service.command);
+  return `${cursor} ${selected} ${serviceName}  ${command}`;
+};
+
+export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => void) => {
+  const { selection, warnings } = opts;
   let palette = getTheme(renderer.themeMode);
 
   const root = new BoxRenderable(renderer, {
@@ -949,7 +960,7 @@ export const buildInitUi = (renderer: CliRenderer, detected: DetectResult): (() 
   });
 
   const versionText = new TextRenderable(renderer, {
-    content: "Stasium v0.2.3 (32423)",
+    content: VERSION_LABEL,
     fg: palette.active,
   });
 
@@ -968,7 +979,7 @@ export const buildInitUi = (renderer: CliRenderer, detected: DetectResult): (() 
   });
 
   const card = new BoxRenderable(renderer, {
-    width: 60,
+    width: 86,
     backgroundColor: palette.panel,
     padding: 2,
     flexDirection: "column",
@@ -979,48 +990,40 @@ export const buildInitUi = (renderer: CliRenderer, detected: DetectResult): (() 
     content: "initialize",
     fg: palette.muted,
   });
-
   card.add(cardTitle);
 
   const noManifest = new TextRenderable(renderer, {
     content: "No stasium.toml found in this directory.",
     fg: palette.active,
   });
-
   card.add(noManifest);
 
-  if (detected.services.length > 0) {
-    const detectedLabel = new TextRenderable(renderer, {
-      content: `\nDetected ${detected.services.length} service${detected.services.length === 1 ? "" : "s"}:`,
-      fg: palette.muted,
-    });
-    card.add(detectedLabel);
+  const detectedSummary = new TextRenderable(renderer, {
+    content: "",
+    fg: palette.muted,
+  });
+  card.add(detectedSummary);
 
-    for (const service of detected.services) {
-      const line = new TextRenderable(renderer, {
-        content: `  ${service.name}  ${formatCommand(service.command)}`,
-        fg: palette.green,
-      });
-      card.add(line);
-    }
-  } else {
-    const noneDetected = new TextRenderable(renderer, {
-      content: "\nNo services detected. A template manifest will be created.",
-      fg: palette.muted,
-    });
-    card.add(noneDetected);
-  }
+  const selectionContainer = new BoxRenderable(renderer, {
+    flexDirection: "column",
+    gap: 0,
+  });
+  card.add(selectionContainer);
 
-  for (const warning of detected.warnings) {
-    const warnLine = new TextRenderable(renderer, {
-      content: `  ${warning}`,
-      fg: palette.amber,
-    });
-    card.add(warnLine);
-  }
+  const warningTitle = new TextRenderable(renderer, {
+    content: "",
+    fg: palette.amber,
+  });
+  card.add(warningTitle);
+
+  const warningContainer = new BoxRenderable(renderer, {
+    flexDirection: "column",
+    gap: 0,
+  });
+  card.add(warningContainer);
 
   const prompt = new TextRenderable(renderer, {
-    content: "\nPress enter to create stasium.toml, or q to quit.",
+    content: "",
     fg: palette.muted,
   });
   card.add(prompt);
@@ -1051,6 +1054,10 @@ export const buildInitUi = (renderer: CliRenderer, detected: DetectResult): (() 
   footer.add(footerPill);
 
   const initShortcuts = [
+    { key: "up/down", label: "move" },
+    { key: "space", label: "toggle" },
+    { key: "a", label: "all" },
+    { key: "n", label: "none" },
     { key: "enter", label: "create" },
     { key: "q", label: "quit" },
   ];
@@ -1059,6 +1066,7 @@ export const buildInitUi = (renderer: CliRenderer, detected: DetectResult): (() 
   for (let i = 0; i < initShortcuts.length; i++) {
     const shortcut = initShortcuts[i];
     if (!shortcut) continue;
+
     const keyText = new TextRenderable(renderer, {
       id: `init-footer-key-${i}`,
       content: shortcut.key,
@@ -1081,26 +1089,108 @@ export const buildInitUi = (renderer: CliRenderer, detected: DetectResult): (() 
   root.add(footer);
   renderer.root.add(root);
 
+  let selectionLines: TextRenderable[] = [];
+  let warningLines: TextRenderable[] = [];
+
+  const clearSelectionLines = () => {
+    for (const line of selectionLines) {
+      selectionContainer.remove(line.id);
+      line.destroy();
+    }
+    selectionLines = [];
+  };
+
+  const clearWarningLines = () => {
+    for (const line of warningLines) {
+      warningContainer.remove(line.id);
+      line.destroy();
+    }
+    warningLines = [];
+  };
+
+  const rebuildSelectionLines = () => {
+    clearSelectionLines();
+
+    const items = selection.getItems();
+    const total = items.length;
+    const selectedCount = selection.getSelectedCount();
+
+    if (total === 0) {
+      detectedSummary.content = "\nNo services detected. A template manifest will be created.";
+      prompt.content = "\nPress enter to create stasium.toml, or q to quit.";
+      return;
+    }
+
+    detectedSummary.content = `\nDetected ${total} service${total === 1 ? "" : "s"} (${selectedCount} selected):`;
+    prompt.content = "\nPress enter to create stasium.toml, or q to quit.";
+
+    const cursor = selection.getCursor();
+
+    items.forEach((item, index) => {
+      const active = index === cursor;
+      const line = new TextRenderable(renderer, {
+        id: `init-selection-${index}`,
+        content: formatInitSelectionLine(item, active),
+        fg: active ? palette.accent : item.selected ? palette.green : palette.muted,
+      });
+      selectionContainer.add(line);
+      selectionLines.push(line);
+    });
+  };
+
+  const rebuildWarnings = () => {
+    clearWarningLines();
+
+    if (warnings.length === 0) {
+      warningTitle.content = "";
+      return;
+    }
+
+    warningTitle.content = "\nWarnings:";
+    warnings.forEach((warning, index) => {
+      const line = new TextRenderable(renderer, {
+        id: `init-warning-${index}`,
+        content: `  - ${warning}`,
+        fg: palette.amber,
+      });
+      warningContainer.add(line);
+      warningLines.push(line);
+    });
+  };
+
+  const renderAll = () => {
+    rebuildSelectionLines();
+    rebuildWarnings();
+    renderer.requestRender();
+  };
+
   const applyTheme = () => {
     palette = getTheme(renderer.themeMode);
     title.fg = palette.muted;
+    versionText.fg = palette.active;
     card.backgroundColor = palette.panel;
     cardTitle.fg = palette.muted;
     noManifest.fg = palette.active;
+    detectedSummary.fg = palette.muted;
+    warningTitle.fg = palette.amber;
     prompt.fg = palette.muted;
-    versionText.fg = palette.active;
+
     for (const item of footerItems) {
       const isKey = item.id.includes("-key-");
       item.fg = isKey ? palette.active : palette.muted;
     }
-    renderer.requestRender();
+
+    renderAll();
   };
 
+  const unsubSelection = selection.onUpdate(renderAll);
+
   renderer.on("theme_mode", applyTheme);
-  renderer.requestRender();
+  renderAll();
 
   return () => {
     renderer.off("theme_mode", applyTheme);
+    unsubSelection();
     root.destroy();
   };
 };
