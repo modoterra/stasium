@@ -40,8 +40,10 @@ bun run init:hooks
 
 GitHub Actions:
 
-- CI runs on PRs and pushes to main.
-- Release runs on push to main using semantic-release and uploads binaries.
+- CI runs on PRs and pushes to main, enforces Conventional Commits, and runs quality gates.
+- Release runs after successful CI on main, uses semantic-release, and uploads binaries.
+- Changelogs are published in GitHub Releases and synced to `CHANGELOG.md`.
+- Release automation expects a `GH_TOKEN` repository secret with `repo` + `workflow` scope.
 
 Commit and branch rules:
 

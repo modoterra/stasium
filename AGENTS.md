@@ -62,10 +62,10 @@
 - This matches `CONTRIBUTING.md` and CI expectations.
 
 ## CI And Release Behavior
-- CI runs on PRs and pushes to `main`.
-- CI checks currently include install, typecheck, lint, format check, tests.
+- CI runs on PRs and pushes to `main` (including commitlint + quality gates).
+- CI checks currently include commitlint, lint, format check, typecheck, tests, and build.
 - Release workflow builds binaries on Linux/macOS/Windows.
-- Semantic Release runs on pushes to `main`.
+- Semantic Release runs after successful CI for pushes to `main`.
 
 ## Import Guidelines
 - Order imports as:
