@@ -13,7 +13,7 @@ const tokenize = (input: string): Token[] => {
   let inDouble = false;
 
   for (let i = 0; i < input.length; i += 1) {
-    const ch = input[i]!;
+    const ch = input.charAt(i);
     if (ch === "\\") {
       const next = input[i + 1];
       if (next !== undefined) {

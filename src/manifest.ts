@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { ServiceGraphError, validateServiceGraph } from "./service-graph";
 import type { Manifest, ServiceConfig } from "./types";
 
 type RawManifest = {
@@ -133,6 +134,15 @@ export const loadManifest = async (path?: string): Promise<Manifest> => {
     names.add(service.name);
   }
 
+  try {
+    validateServiceGraph(normalized);
+  } catch (error) {
+    if (error instanceof ServiceGraphError) {
+      throw new ManifestError(error.message);
+    }
+    throw error;
+  }
+
   return {
     services: normalized,
     path: resolve(manifestPath),
@@ -162,7 +172,7 @@ const renderServiceToml = (service: ServiceConfig): string => {
   if (service.env && Object.keys(service.env).length > 0) {
     lines.push("[service.env]");
     for (const [key, value] of Object.entries(service.env)) {
-      lines.push(`${key} = "${escapeToml(value)}"`);
+      lines.push(`"${escapeToml(key)}" = "${escapeToml(value)}"`);
     }
   }
   return lines.join("\n");

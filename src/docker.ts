@@ -21,10 +21,39 @@ const splitLines = (text: string): string[] =>
 const getComposeEnvPath = (cwd: string): string | null => {
   const envValue = process.env.COMPOSE_FILE;
   if (!envValue) return null;
-  const delimiter = envValue.includes(";") ? ";" : ":";
+  const delimiter = process.platform === "win32" ? ";" : ":";
   const firstPath = envValue.split(delimiter).map((item) => item.trim())[0];
   if (!firstPath) return null;
   return resolve(cwd, firstPath);
+};
+
+const parsePsOutput = (output: string): DockerPsEntry[] => {
+  const trimmed = output.trim();
+  if (trimmed.length === 0) return [];
+
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((entry): entry is DockerPsEntry => {
+        return entry !== null && typeof entry === "object";
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  const entries: DockerPsEntry[] = [];
+  for (const line of trimmed.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line) as DockerPsEntry;
+      entries.push(entry);
+    } catch {
+      // skip malformed lines
+    }
+  }
+  return entries;
 };
 
 export const detectComposeFile = async (cwd: string): Promise<string | null> => {
@@ -99,6 +128,7 @@ export class DockerManager {
   private readonly logs: Map<string, LogBuffer> = new Map();
   private readonly updateCallbacks: Set<DockerUpdateCallback> = new Set();
   private pollTimer: ReturnType<typeof setInterval> | null = null;
+  private refreshing = false;
   private activeLogProcess: { proc: Bun.Subprocess; name: string } | null = null;
   private activeLogService: string | null = null;
 
@@ -168,6 +198,9 @@ export class DockerManager {
   }
 
   async refresh(): Promise<void> {
+    if (this.refreshing) return;
+    this.refreshing = true;
+
     try {
       let configServices: string[] = [];
       try {
@@ -196,25 +229,18 @@ export class DockerManager {
       const output = await new Response(proc.stdout).text();
       await proc.exited;
 
-      const entries: DockerPsEntry[] = [];
+      const entries = parsePsOutput(output);
       const entriesByService = new Map<string, DockerPsEntry[]>();
       const entryOrder: string[] = [];
 
-      for (const line of output.trim().split("\n")) {
-        if (!line.trim()) continue;
-        try {
-          const entry = JSON.parse(line) as DockerPsEntry;
-          entries.push(entry);
-          const name = entry.Service ?? entry.Name ?? "unknown";
-          const list = entriesByService.get(name);
-          if (list) {
-            list.push(entry);
-          } else {
-            entriesByService.set(name, [entry]);
-            entryOrder.push(name);
-          }
-        } catch {
-          // skip malformed lines
+      for (const entry of entries) {
+        const name = entry.Service ?? entry.Name ?? "unknown";
+        const list = entriesByService.get(name);
+        if (list) {
+          list.push(entry);
+        } else {
+          entriesByService.set(name, [entry]);
+          entryOrder.push(name);
         }
       }
 
@@ -261,6 +287,8 @@ export class DockerManager {
       this.notify();
     } catch {
       // docker compose not available or failed
+    } finally {
+      this.refreshing = false;
     }
   }
 

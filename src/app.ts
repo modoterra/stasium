@@ -143,6 +143,7 @@ const setupKeybindings = (
 
   const handleEditing = async (key: KeyEvent) => {
     if (key.ctrl && key.name === "s") {
+      controls.clearEditError();
       const toml = controls.getEditContent();
       try {
         const config = parseServiceBlock(toml);
@@ -150,8 +151,9 @@ const setupKeybindings = (
         await manager.updateServiceConfig(index, config);
         await saveManifest(manifestPath, manager.getConfigs());
         await syncPids();
-      } catch {
-        // invalid TOML — stay in editing mode
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        controls.setEditError(message);
         return;
       }
       controls.hideEditOverlay();
@@ -168,14 +170,23 @@ const setupKeybindings = (
 
   const handleAdding = async (key: KeyEvent) => {
     if (key.name === "enter" || key.name === "return") {
+      controls.clearAddError();
       const name = controls.getAddName().trim();
       const command = controls.getAddCommand().trim();
-      if (name && command) {
+      if (!name || !command) {
+        controls.setAddError("Name and command are required.");
+        return;
+      }
+
+      try {
         await manager.addService({ name, command });
         await saveManifest(manifestPath, manager.getConfigs());
         await syncPids();
         controls.hideAddOverlay();
         focusManager.setMode("normal");
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        controls.setAddError(message);
       }
       return;
     }

@@ -117,11 +117,15 @@ export interface UiControls {
   showEditOverlay: (toml: string) => void;
   hideEditOverlay: () => void;
   getEditContent: () => string;
+  setEditError: (message: string) => void;
+  clearEditError: () => void;
   showAddOverlay: () => void;
   hideAddOverlay: () => void;
   cycleAddFocus: () => void;
   getAddName: () => string;
   getAddCommand: () => string;
+  setAddError: (message: string) => void;
+  clearAddError: () => void;
   showDeleteConfirm: (name: string) => void;
   hideDeleteConfirm: () => void;
   renderAll: () => void;
@@ -466,6 +470,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   });
   editOverlay.add(editTitle);
 
+  const editError = new TextRenderable(renderer, {
+    content: "",
+    fg: palette.red,
+  });
+  editOverlay.add(editError);
+
   const editTextarea = new TextareaRenderable(renderer, {
     id: "edit-textarea",
     flexGrow: 1,
@@ -541,6 +551,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   addCommandField.add(addCommandInput);
   addOverlay.add(addCommandField);
 
+  const addError = new TextRenderable(renderer, {
+    content: "",
+    fg: palette.red,
+  });
+  addOverlay.add(addError);
+
   // Delete confirm overlay
   const deleteOverlay = new BoxRenderable(renderer, {
     id: "delete-overlay",
@@ -595,7 +611,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       const prefix = selected ? ">" : " ";
       const status = formatState(view.state);
       const exitCode = formatExit(view.lastExitCode);
-      const content = `${prefix} ${status} ${view.name}  exit:${exitCode}  restarts:${view.restartCount}`;
+      const restartInfo =
+        view.restartInMs !== null ? `  restarting_in:${Math.ceil(view.restartInMs)}ms` : "";
+      const content = `${prefix} ${status} ${view.name}  exit:${exitCode}  restarts:${view.restartCount}${restartInfo}`;
       const line = new TextRenderable(renderer, {
         id: `service-${index}`,
         content,
@@ -699,10 +717,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
     editOverlay.backgroundColor = palette.modal;
     editTitle.fg = palette.accent;
+    editError.fg = palette.red;
     editTextarea.backgroundColor = palette.input;
     editTextarea.textColor = palette.active;
     addOverlay.backgroundColor = palette.modal;
     addTitle.fg = palette.accent;
+    addError.fg = palette.red;
     addNameLabel.fg = palette.muted;
     addCommandLabel.fg = palette.muted;
     addNameField.backgroundColor = palette.input;
@@ -733,6 +753,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       editOverlay.visible = true;
       addOverlay.visible = false;
       deleteOverlay.visible = false;
+      editError.content = "";
       editTextarea.initialValue = toml;
       editTextarea.focus();
       renderer.requestRender();
@@ -741,6 +762,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     hideEditOverlay() {
       overlayBg.visible = false;
       editOverlay.visible = false;
+      editError.content = "";
       editTextarea.blur();
       renderer.requestRender();
     },
@@ -749,11 +771,22 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       return editTextarea.plainText;
     },
 
+    setEditError(message: string) {
+      editError.content = message;
+      renderer.requestRender();
+    },
+
+    clearEditError() {
+      editError.content = "";
+      renderer.requestRender();
+    },
+
     showAddOverlay() {
       overlayBg.visible = true;
       addOverlay.visible = true;
       editOverlay.visible = false;
       deleteOverlay.visible = false;
+      addError.content = "";
       addFocusField = "name";
       addNameInput.value = "";
       addCommandInput.value = "";
@@ -765,6 +798,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     hideAddOverlay() {
       overlayBg.visible = false;
       addOverlay.visible = false;
+      addError.content = "";
       addNameInput.blur();
       addCommandInput.blur();
       renderer.requestRender();
@@ -789,6 +823,16 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
     getAddCommand(): string {
       return addCommandInput.value;
+    },
+
+    setAddError(message: string) {
+      addError.content = message;
+      renderer.requestRender();
+    },
+
+    clearAddError() {
+      addError.content = "";
+      renderer.requestRender();
     },
 
     showDeleteConfirm(name: string) {
