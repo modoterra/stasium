@@ -30,6 +30,8 @@ Use Conventional Commit messages, for example:
 - `fix: avoid duplicate service startup`
 - `docs: clarify release process`
 
+Commit messages are validated by commitlint in local hooks and CI.
+
 ### Signed Commits (required)
 
 All commits must be signed.
@@ -39,6 +41,10 @@ All commits must be signed.
 - Explain why the change is needed.
 - Include validation notes (what you ran and what passed).
 - Keep one concern per PR when possible.
+
+## Release Automation Notes
+
+- `GH_TOKEN` repository secret is required for semantic-release to publish releases and commit `CHANGELOG.md`.
 
 ## Code of Conduct
 
