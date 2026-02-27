@@ -138,3 +138,87 @@ export const loadManifest = async (path?: string): Promise<Manifest> => {
     path: resolve(manifestPath),
   };
 };
+
+const escapeToml = (value: string): string => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+const renderServiceToml = (service: ServiceConfig): string => {
+  const lines: string[] = [];
+  lines.push("[[service]]");
+  lines.push(`name = "${escapeToml(service.name)}"`);
+  const command = Array.isArray(service.command)
+    ? `[${service.command.map((part) => `"${escapeToml(part)}"`).join(", ")}]`
+    : `"${escapeToml(service.command)}"`;
+  lines.push(`command = ${command}`);
+  if (service.working_dir) {
+    lines.push(`working_dir = "${escapeToml(service.working_dir)}"`);
+  }
+  if (service.restart_policy) {
+    lines.push(`restart_policy = "${service.restart_policy}"`);
+  }
+  if (service.depends_on && service.depends_on.length > 0) {
+    const deps = service.depends_on.map((d) => `"${escapeToml(d)}"`).join(", ");
+    lines.push(`depends_on = [${deps}]`);
+  }
+  if (service.env && Object.keys(service.env).length > 0) {
+    lines.push("[service.env]");
+    for (const [key, value] of Object.entries(service.env)) {
+      lines.push(`${key} = "${escapeToml(value)}"`);
+    }
+  }
+  return lines.join("\n");
+};
+
+export const renderManifest = (services: ServiceConfig[]): string => {
+  const lines: string[] = [];
+  lines.push("# stasium.toml");
+  lines.push("");
+
+  if (services.length === 0) {
+    lines.push("# No services configured. Add [[service]] blocks below.");
+    lines.push("#");
+    lines.push("# [[service]]");
+    lines.push('# name = "app"');
+    lines.push('# command = ["php", "artisan", "serve"]');
+    lines.push('# working_dir = "."');
+    lines.push("");
+    return lines.join("\n");
+  }
+
+  for (const service of services) {
+    lines.push(renderServiceToml(service));
+    lines.push("");
+  }
+
+  return lines.join("\n");
+};
+
+export const renderServiceBlock = (service: ServiceConfig): string => {
+  return renderServiceToml(service);
+};
+
+export const parseServiceBlock = (toml: string): ServiceConfig => {
+  let parsed: RawManifest;
+  try {
+    parsed = Bun.TOML.parse(toml) as RawManifest;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new ManifestError(`Invalid TOML: ${message}`);
+  }
+
+  const services = parsed.service ?? [];
+  if (!Array.isArray(services) || services.length !== 1) {
+    throw new ManifestError("Expected exactly one [[service]] block");
+  }
+
+  const raw = services[0];
+  if (!raw) {
+    throw new ManifestError("Expected exactly one [[service]] block");
+  }
+
+  return normalizeService(raw, 0);
+};
+
+export const saveManifest = async (path: string, services: ServiceConfig[]): Promise<void> => {
+  const contents = renderManifest(services);
+  await Bun.write(path, contents);
+};

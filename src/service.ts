@@ -18,6 +18,57 @@ const splitLines = (buffer: string): { lines: string[]; rest: string } => {
   return { lines: parts, rest };
 };
 
+const resolveShell = (): string => {
+  const shell = process.env.SHELL;
+  if (shell && shell.trim().length > 0) return shell;
+  return "/bin/sh";
+};
+
+let pathRefreshPromise: Promise<string> | null = null;
+
+const readPathFromShell = async (cwd?: string): Promise<string | null> => {
+  try {
+    const proc = Bun.spawn({
+      cmd: [resolveShell(), "-lc", "printenv PATH"],
+      cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const output = await new Response(proc.stdout).text();
+    await proc.exited;
+    const freshPath = output.trim();
+    return freshPath.length > 0 ? freshPath : null;
+  } catch {
+    return null;
+  }
+};
+
+const getFreshPath = async (cwd?: string): Promise<string> => {
+  if (pathRefreshPromise) return pathRefreshPromise;
+  pathRefreshPromise = (async () => {
+    const freshPath = await readPathFromShell(cwd);
+    if (freshPath) {
+      process.env.PATH = freshPath;
+      return freshPath;
+    }
+    return process.env.PATH ?? "";
+  })();
+  try {
+    return await pathRefreshPromise;
+  } finally {
+    pathRefreshPromise = null;
+  }
+};
+
+const buildSpawnEnv = async (
+  cwd: string | undefined,
+  overrides?: Record<string, string>,
+): Promise<NodeJS.ProcessEnv> => {
+  const freshPath = await getFreshPath(cwd);
+  const baseEnv: NodeJS.ProcessEnv = { ...process.env, PATH: freshPath };
+  return overrides ? { ...baseEnv, ...overrides } : baseEnv;
+};
+
 export class ServiceProcess {
   readonly config: ServiceConfig;
   private state: ServiceState = "STOPPED";
@@ -38,6 +89,10 @@ export class ServiceProcess {
     return () => this.subscribers.delete(handler);
   }
 
+  clearSubscriptions(): void {
+    this.subscribers.clear();
+  }
+
   getState(): ServiceState {
     return this.state;
   }
@@ -48,6 +103,10 @@ export class ServiceProcess {
 
   getLastSignal(): string | null {
     return this.lastSignal;
+  }
+
+  getPid(): number | null {
+    return this.process?.pid ?? null;
   }
 
   isRunning(): boolean {
@@ -75,10 +134,11 @@ export class ServiceProcess {
     }
 
     try {
+      const env = await buildSpawnEnv(this.config.working_dir, this.config.env);
       this.process = Bun.spawn({
         cmd: argv,
         cwd: this.config.working_dir,
-        env: this.config.env ? { ...process.env, ...this.config.env } : process.env,
+        env,
         stdout: "pipe",
         stderr: "pipe",
       });

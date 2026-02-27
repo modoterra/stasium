@@ -1,6 +1,6 @@
 import { LogBuffer } from "./log-buffer";
-import { ServiceProcess, type ServiceEvent } from "./service";
-import type { LogEntry, ServiceConfig, ServiceState } from "./types";
+import { type ServiceEvent, ServiceProcess } from "./service";
+import type { ServiceConfig, ServicePid, ServiceState } from "./types";
 
 export interface ServiceView {
   name: string;
@@ -8,6 +8,7 @@ export interface ServiceView {
   lastExitCode: number | null;
   restartCount: number;
   log: LogBuffer;
+  config: ServiceConfig;
 }
 
 export type UpdateCallback = () => void;
@@ -15,9 +16,10 @@ export type UpdateCallback = () => void;
 const LOG_CAPACITY = 2000;
 
 export class ServiceManager {
-  private readonly services: ServiceProcess[];
-  private readonly views: ServiceView[];
+  private services: ServiceProcess[];
+  private views: ServiceView[];
   private readonly updateCallbacks: Set<UpdateCallback> = new Set();
+  private readonly processCallbacks: Set<UpdateCallback> = new Set();
   private selectedIndex = 0;
 
   constructor(configs: ServiceConfig[]) {
@@ -28,6 +30,7 @@ export class ServiceManager {
       lastExitCode: null,
       restartCount: 0,
       log: new LogBuffer(LOG_CAPACITY),
+      config: service.config,
     }));
 
     this.services.forEach((service, index) => {
@@ -38,6 +41,11 @@ export class ServiceManager {
   onUpdate(callback: UpdateCallback): () => void {
     this.updateCallbacks.add(callback);
     return () => this.updateCallbacks.delete(callback);
+  }
+
+  onProcessChange(callback: UpdateCallback): () => void {
+    this.processCallbacks.add(callback);
+    return () => this.processCallbacks.delete(callback);
   }
 
   getSelectedIndex(): number {
@@ -62,6 +70,25 @@ export class ServiceManager {
 
   getSelectedView(): ServiceView | null {
     return this.views[this.selectedIndex] ?? null;
+  }
+
+  getSelectedConfig(): ServiceConfig | null {
+    const view = this.views[this.selectedIndex];
+    return view ? view.config : null;
+  }
+
+  getConfigs(): ServiceConfig[] {
+    return this.views.map((v) => v.config);
+  }
+
+  getServicePids(): ServicePid[] {
+    const entries: ServicePid[] = [];
+    for (const service of this.services) {
+      const pid = service.getPid();
+      if (!pid) continue;
+      entries.push({ name: service.config.name, pid });
+    }
+    return entries;
   }
 
   async startAll(): Promise<void> {
@@ -107,6 +134,86 @@ export class ServiceManager {
     }
   }
 
+  async addService(config: ServiceConfig): Promise<void> {
+    const process = new ServiceProcess(config);
+    const index = this.services.length;
+    this.services.push(process);
+    this.views.push({
+      name: config.name,
+      state: "STOPPED",
+      lastExitCode: null,
+      restartCount: 0,
+      log: new LogBuffer(LOG_CAPACITY),
+      config,
+    });
+    process.subscribe((event) => this.handleEvent(index, event));
+    await process.start();
+    this.notify();
+  }
+
+  async removeSelected(): Promise<boolean> {
+    if (this.services.length === 0) return false;
+    const index = this.selectedIndex;
+    const service = this.services[index];
+    if (!service) return false;
+
+    if (service.isRunning()) {
+      await service.stop();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      if (service.isRunning()) {
+        await service.forceStop();
+      }
+    }
+
+    this.services.splice(index, 1);
+    this.views.splice(index, 1);
+
+    if (this.selectedIndex >= this.views.length && this.views.length > 0) {
+      this.selectedIndex = this.views.length - 1;
+    }
+    if (this.views.length === 0) {
+      this.selectedIndex = 0;
+    }
+
+    // Re-wire event subscriptions with correct indices
+    this.services.forEach((svc, i) => {
+      svc.clearSubscriptions();
+      svc.subscribe((event) => this.handleEvent(i, event));
+    });
+
+    this.notify();
+    return true;
+  }
+
+  async updateServiceConfig(index: number, config: ServiceConfig): Promise<void> {
+    const oldService = this.services[index];
+    if (!oldService) return;
+
+    if (oldService.isRunning()) {
+      await oldService.stop();
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      if (oldService.isRunning()) {
+        await oldService.forceStop();
+      }
+    }
+
+    const newProcess = new ServiceProcess(config);
+    this.services[index] = newProcess;
+
+    const view = this.views[index];
+    if (view) {
+      view.name = config.name;
+      view.config = config;
+      view.state = "STOPPED";
+      view.lastExitCode = null;
+      view.log.clear();
+    }
+
+    newProcess.subscribe((event) => this.handleEvent(index, event));
+    await newProcess.start();
+    this.notify();
+  }
+
   async waitForExit(timeoutMs: number): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -122,16 +229,24 @@ export class ServiceManager {
     if (!view) return;
     if (event.type === "state") {
       view.state = event.state;
+      this.notifyProcessChange();
     } else if (event.type === "log") {
       view.log.add(event.entry);
     } else if (event.type === "exit") {
       view.lastExitCode = event.code;
+      this.notifyProcessChange();
     }
     this.notify();
   }
 
   private notify() {
     for (const callback of this.updateCallbacks) {
+      callback();
+    }
+  }
+
+  private notifyProcessChange() {
+    for (const callback of this.processCallbacks) {
       callback();
     }
   }
