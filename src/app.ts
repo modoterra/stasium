@@ -164,6 +164,9 @@ const setupKeybindings = (
       case "c":
         controls.clearLogs();
         break;
+      case "f":
+        controls.toggleLogsFollowTail();
+        break;
       default:
         break;
     }
@@ -269,68 +272,82 @@ const setupKeybindings = (
     }
   };
 
+  const handleQuit = async (reason: string): Promise<void> => {
+    try {
+      await shutdown.run(reason);
+    } catch (error) {
+      console.error(`Shutdown warning: ${getErrorMessage(error)}`);
+    }
+
+    if (dockerManager) {
+      try {
+        await dockerManager.destroy();
+      } catch (error) {
+        console.error(`Docker cleanup warning: ${getErrorMessage(error)}`);
+      }
+    }
+
+    renderer.destroy();
+  };
+
   renderer.keyInput.on("keypress", async (key: KeyEvent) => {
     if (key.eventType === "release") return;
 
-    // Global: Ctrl+C always quits
-    if (key.ctrl && key.name === "c") {
-      await shutdown.run("User requested shutdown.");
-      if (dockerManager) {
-        await dockerManager.destroy();
+    try {
+      // Global: Ctrl+C always quits
+      if (key.ctrl && key.name === "c") {
+        await handleQuit("User requested shutdown.");
+        return;
       }
-      renderer.destroy();
-      return;
-    }
 
-    const mode = focusManager.getMode();
+      const mode = focusManager.getMode();
 
-    if (mode === "editing") {
-      await handleEditing(key);
-      return;
-    }
-
-    if (mode === "adding") {
-      await handleAdding(key);
-      return;
-    }
-
-    // Normal mode
-    if (deleteConfirming) {
-      await handleDeleteConfirm(key);
-      return;
-    }
-
-    // Global normal shortcuts
-    if (key.name === "tab") {
-      focusManager.cyclePanel();
-      return;
-    }
-
-    if (key.name === "q" || key.name === "escape") {
-      await shutdown.run("User requested shutdown.");
-      if (dockerManager) {
-        await dockerManager.destroy();
+      if (mode === "editing") {
+        await handleEditing(key);
+        return;
       }
-      renderer.destroy();
-      return;
-    }
 
-    // Panel-specific shortcuts
-    const panel = focusManager.getActivePanel();
+      if (mode === "adding") {
+        await handleAdding(key);
+        return;
+      }
 
-    if (panel === "manifest") {
-      await handleNormalManifest(key);
-      return;
-    }
+      // Normal mode
+      if (deleteConfirming) {
+        await handleDeleteConfirm(key);
+        return;
+      }
 
-    if (panel === "logs") {
-      handleNormalLogs(key);
-      return;
-    }
+      // Global normal shortcuts
+      if (key.name === "tab") {
+        focusManager.cyclePanel();
+        return;
+      }
 
-    if (panel === "docker") {
-      await handleNormalDocker(key);
-      return;
+      if (key.name === "q" || key.name === "escape") {
+        await handleQuit("User requested shutdown.");
+        return;
+      }
+
+      // Panel-specific shortcuts
+      const panel = focusManager.getActivePanel();
+
+      if (panel === "manifest") {
+        await handleNormalManifest(key);
+        return;
+      }
+
+      if (panel === "logs") {
+        handleNormalLogs(key);
+        return;
+      }
+
+      if (panel === "docker") {
+        await handleNormalDocker(key);
+        return;
+      }
+    } catch (error) {
+      console.error(getErrorMessage(error));
     }
   });
 };

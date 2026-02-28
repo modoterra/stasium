@@ -9,6 +9,16 @@ const makeConfig = (name: string): ServiceConfig => ({
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
+const isProcessAlive = (pid: number): boolean => {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const waitFor = async (
   predicate: () => boolean,
   timeoutMs = 2000,
@@ -80,6 +90,84 @@ describe("ServiceManager", () => {
 
     const stopped = await waitFor(() => manager.getServicePids().length === 0);
     expect(stopped).toBe(true);
+  });
+
+  test("force-stops stubborn services that ignore SIGINT and SIGTERM", async () => {
+    const stubbornScript = [
+      "process.on('SIGINT', () => {});",
+      "process.on('SIGTERM', () => {});",
+      "setInterval(() => {}, 1000);",
+    ].join(" ");
+
+    const manager = new ServiceManager([
+      {
+        name: "stubborn",
+        command: ["bun", "-e", stubbornScript],
+      },
+    ]);
+
+    await manager.startAll();
+    const started = await waitFor(() => manager.getServicePids().length === 1);
+    expect(started).toBe(true);
+
+    await manager.stopAll();
+
+    const stopped = await waitFor(() => manager.getServicePids().length === 0, 5000);
+    expect(stopped).toBe(true);
+  });
+
+  test("stops child processes spawned by services", async () => {
+    const childScript = "setInterval(() => {}, 1000);";
+    const parentScript = [
+      `const child = Bun.spawn({ cmd: [\"bun\", \"-e\", ${JSON.stringify(childScript)}], stdout: \"ignore\", stderr: \"ignore\" });`,
+      "console.log(`child:${child.pid}`);",
+      "setInterval(() => {}, 1000);",
+    ].join(" ");
+
+    const manager = new ServiceManager([
+      {
+        name: "tree",
+        command: ["bun", "-e", parentScript],
+      },
+    ]);
+
+    let childPid: number | null = null;
+
+    try {
+      await manager.startAll();
+      const started = await waitFor(() => manager.getServicePids().length === 1);
+      expect(started).toBe(true);
+
+      const childDetected = await waitFor(() => {
+        const lines = manager.getSelectedView()?.log.all() ?? [];
+        for (const entry of lines) {
+          const match = /^child:(\d+)$/.exec(entry.line.trim());
+          if (!match) continue;
+          const parsed = Number.parseInt(match[1] ?? "", 10);
+          if (!Number.isFinite(parsed) || parsed <= 0) continue;
+          childPid = parsed;
+          return true;
+        }
+        return false;
+      }, 3000);
+      expect(childDetected).toBe(true);
+
+      await manager.stopAll();
+      const stopped = await waitFor(() => manager.getServicePids().length === 0, 5000);
+      expect(stopped).toBe(true);
+
+      const pid = childPid;
+      expect(pid).not.toBeNull();
+      if (pid !== null) {
+        const childExited = await waitFor(() => !isProcessAlive(pid), 3000);
+        expect(childExited).toBe(true);
+      }
+    } finally {
+      const pid = childPid;
+      if (pid !== null && isProcessAlive(pid)) {
+        process.kill(pid, "SIGKILL");
+      }
+    }
   });
 
   test("restarts failed services with on-failure policy", async () => {

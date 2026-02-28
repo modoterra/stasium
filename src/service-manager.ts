@@ -137,7 +137,7 @@ export class ServiceManager {
       this.getTopologicalOrderNames().reverse(),
       async (service) => {
         this.suppressAutoRestart(service);
-        await service.forceStop();
+        await service.forceStop("SIGKILL");
       },
     );
   }
@@ -174,7 +174,7 @@ export class ServiceManager {
       this.getStopOrderForService(service.config.name),
       async (next) => {
         this.suppressAutoRestart(next);
-        await next.forceStop();
+        await next.forceStop("SIGKILL");
       },
     );
   }
@@ -580,7 +580,11 @@ export class ServiceManager {
     const stopped = await this.waitForServiceExit(service, SERVICE_STOP_TIMEOUT_MS);
     if (stopped) return;
 
-    await service.forceStop();
+    await service.forceStop("SIGTERM");
+    const terminated = await this.waitForServiceExit(service, SERVICE_STOP_TIMEOUT_MS);
+    if (terminated) return;
+
+    await service.forceStop("SIGKILL");
     await this.waitForServiceExit(service, SERVICE_STOP_TIMEOUT_MS);
   }
 

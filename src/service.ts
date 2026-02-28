@@ -12,6 +12,7 @@ type ServiceSubscriber = (event: ServiceEvent) => void;
 const timestamp = (): string => new Date().toISOString();
 
 const lineDecoder = new TextDecoder();
+const SHOULD_DETACH_PROCESS_GROUP = process.platform !== "win32";
 
 const splitLines = (buffer: string): { lines: string[]; rest: string } => {
   const parts = buffer.split(/\r?\n/);
@@ -72,6 +73,7 @@ const buildSpawnEnv = async (
 
 export class ServiceProcess {
   readonly config: ServiceConfig;
+  private readonly detached = SHOULD_DETACH_PROCESS_GROUP;
   private state: ServiceState = "STOPPED";
   private process: Bun.Subprocess<"ignore", "pipe", "pipe"> | null = null;
   private subscribers: Set<ServiceSubscriber> = new Set();
@@ -135,6 +137,7 @@ export class ServiceProcess {
         cmd: argv,
         cwd: this.config.working_dir,
         env,
+        detached: this.detached,
         stdout: "pipe",
         stderr: "pipe",
       });
@@ -183,13 +186,13 @@ export class ServiceProcess {
     this.stopRequested = true;
     this.setState("STOPPING");
     try {
-      this.process.kill(signal);
+      this.signalProcess(signal);
     } catch {
       this.setState("STOPPED");
     }
   }
 
-  async forceStop(): Promise<void> {
+  async forceStop(signal: NodeJS.Signals = "SIGTERM"): Promise<void> {
     if (!this.process) {
       this.setState("STOPPED");
       return;
@@ -197,9 +200,33 @@ export class ServiceProcess {
     this.stopRequested = true;
     this.setState("STOPPING");
     try {
-      this.process.kill("SIGTERM");
+      this.signalProcess(signal);
     } catch {
       this.setState("STOPPED");
+    }
+  }
+
+  private signalProcess(signal: NodeJS.Signals): void {
+    const processHandle = this.process;
+    if (!processHandle) return;
+
+    if (this.signalProcessGroup(processHandle.pid, signal)) return;
+    processHandle.kill(signal);
+  }
+
+  private signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
+    if (!this.detached) return false;
+    if (!Number.isInteger(pid) || pid <= 0) return false;
+
+    try {
+      process.kill(-pid, signal);
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException | undefined)?.code;
+      if (code === "ESRCH") {
+        return true;
+      }
+      return false;
     }
   }
 
