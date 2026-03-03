@@ -1,5 +1,31 @@
 # stasium
 
+## Installation
+
+**Linux / macOS:**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/modoterra/stasium/main/install.sh | sh
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/modoterra/stasium/main/install.ps1 | iex
+```
+
+**Manual download:** grab the binary for your platform from
+[GitHub Releases](https://github.com/modoterra/stasium/releases/latest).
+
+| Binary | Platform |
+|---|---|
+| `stasium-linux-x64` | Linux x86_64 |
+| `stasium-linux-arm64` | Linux ARM64 |
+| `stasium-macos-arm64` | macOS Apple Silicon |
+| `stasium-windows-x64.exe` | Windows x86_64 |
+
+## Development
+
 To install dependencies:
 
 ```bash
@@ -30,7 +56,7 @@ Discovery strategies are data-driven via TOML:
 - Built-in catalog: `src/discovery/strategies.toml`
 - Optional project overrides: `.stasium/discovery.toml`
 
-Development commands:
+Commands:
 
 ```bash
 bun run lint

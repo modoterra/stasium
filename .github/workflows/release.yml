@@ -14,12 +14,24 @@ concurrency:
 
 jobs:
   build:
-    name: Build ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - target: linux-x64
+            runner: ubuntu-latest
+            artifact: stasium-linux-x64
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            artifact: stasium-linux-arm64
+          - target: macos-arm64
+            runner: macos-latest
+            artifact: stasium-macos-arm64
+          - target: windows-x64
+            runner: windows-latest
+            artifact: stasium-windows-x64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -48,7 +60,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: stasium-${{ matrix.os }}
+          name: ${{ matrix.artifact }}
           path: release/
 
   release:
@@ -61,13 +73,19 @@ jobs:
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
-          path: release
+          path: artifacts
 
-      - name: Rename artifacts
+      - name: Prepare release assets
         run: |
-          mv release/stasium-ubuntu-latest/stasium release/stasium-linux
-          mv release/stasium-macos-latest/stasium release/stasium-macos
-          mv release/stasium-windows-latest/stasium.exe release/stasium-windows.exe
+          mkdir -p release
+          cp artifacts/stasium-linux-x64/stasium release/stasium-linux-x64
+          cp artifacts/stasium-linux-arm64/stasium release/stasium-linux-arm64
+          cp artifacts/stasium-macos-arm64/stasium release/stasium-macos-arm64
+          cp artifacts/stasium-windows-x64/stasium.exe release/stasium-windows-x64.exe
+
+      - name: Generate checksums
+        working-directory: release
+        run: sha256sum * > checksums.txt
 
       - name: Create GitHub release
         env:
@@ -76,6 +94,8 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --generate-notes \
-            release/stasium-linux \
-            release/stasium-macos \
-            release/stasium-windows.exe
+            release/stasium-linux-x64 \
+            release/stasium-linux-arm64 \
+            release/stasium-macos-arm64 \
+            release/stasium-windows-x64.exe \
+            release/checksums.txt
