@@ -8,9 +8,23 @@
 ## Project Snapshot
 - Stack: Bun + TypeScript (ESM).
 - UI layer: `@opentui/core` terminal renderer.
-- Entry point: `index.ts`.
-- Main code: `src/*.ts`.
+- Entry point: `index.ts` (delegates to `src/app.ts`).
+- Main code: `src/*.ts`, discovery subsystem in `src/discovery/`.
 - Runtime manifest: `stasium.toml`.
+
+## Architecture At A Glance
+- `src/app.ts` — Main orchestration, keybindings, TUI setup.
+- `src/types.ts` — Shared domain types (states, configs, events).
+- `src/manifest.ts` — TOML manifest loading, saving, and validation.
+- `src/service.ts` — Individual process management (spawn, streams, signals).
+- `src/service-manager.ts` — Multi-service orchestration with dependency-aware start/stop.
+- `src/service-graph.ts` — DAG validation, topological sort, dependency closures.
+- `src/ui.ts` — TUI rendering, dark/light themes.
+- `src/focus.ts` — Panel focus and keyboard shortcut management.
+- `src/docker.ts` — Docker Compose integration.
+- `src/shutdown.ts` — Graceful shutdown with signal handling.
+- `src/command.ts` — Shell command tokenization and safety validation.
+- `src/discovery/` — Auto-detection of services via TOML-defined strategies.
 
 ## Setup And Core Commands
 - Install dependencies: `bun install`
@@ -23,14 +37,6 @@
 - Format check: `bun run format:check`
 - Run tests: `bun run test`
 - Install git hooks: `bun run init:hooks`
-- Release (maintainers/CI): `bun run release`
-
-## Build/Lint/Test (Canonical)
-- Build: `bun run build`
-- Lint: `bun run lint`
-- Format gate: `bun run format:check`
-- Type gate: `bun run typecheck`
-- Test: `bun test` (equivalent to `bun run test`)
 
 ## Running A Single Test
 - Run one test file:
@@ -43,38 +49,33 @@
   - `bun test src/manifest.test.ts -t "^loads valid manifest$"`
 - Run matching test names across all files:
   - `bun test --test-name-pattern "manifest"`
-- If no test files exist for a temporary branch:
-  - `bun test --pass-with-no-tests`
-- Bun default discovery pattern:
-  - `**{.test,.spec,_test_,_spec_}.{js,ts,jsx,tsx}`
-
-## Current Test Status
-- Repository includes test files under `src/` and CI runs `bun test`.
-- New behavior changes should add or update tests using `.test.ts` or `.spec.ts` naming.
+- Tests import from `bun:test` (`{ describe, expect, test }`).
+- Test files are co-located with source using `.test.ts` suffix.
+- New behavior changes should add or update tests.
 
 ## Pre-PR Validation Sequence
-- Run this exact sequence before opening or updating a PR:
-  1. `bun run lint`
-  2. `bun run format:check`
-  3. `bun run typecheck`
-  4. `bun run test`
-  5. `bun run build`
-- This matches `CONTRIBUTING.md` and CI expectations.
+Run this exact sequence before opening or updating a PR:
+1. `bun run lint`
+2. `bun run format:check`
+3. `bun run typecheck`
+4. `bun run test`
+5. `bun run build`
 
-## CI And Release Behavior
-- CI runs on PRs and pushes to `main` (including commitlint + quality gates).
-- CI checks currently include commitlint, lint, format check, typecheck, tests, and build.
-- Release workflow builds binaries on Linux/macOS/Windows.
-- Semantic Release runs after successful CI for pushes to `main`.
+## CI And Release
+- CI runs on PRs and pushes to `main` (commitlint + lint + format + typecheck + test + build).
+- A separate workflow validates branch names on PRs.
+- Release is **tag-based**: pushing a `v*.*.*` tag triggers cross-platform binary builds and a GitHub Release.
 
 ## Import Guidelines
 - Order imports as:
   1. Node built-ins (`node:*`)
   2. External packages
   3. Local relative modules (`./...`)
-- Prefer explicit type-only imports:
+- Relative imports omit the `.ts` extension (e.g., `import { run } from "./app";`).
+- Use explicit type-only imports (`verbatimModuleSyntax` is enabled):
   - `import type { X } from "./types";`
   - or `import { type X, y } from "pkg";`
+- All exports are **named** — do not use default exports.
 - Keep imports minimal and remove unused imports.
 
 ## Formatting Guidelines
@@ -88,6 +89,7 @@
 - Compiler strictness is enabled (`strict: true`).
 - `noUncheckedIndexedAccess` is enabled: guard indexed lookups.
 - `noImplicitOverride` is enabled: use `override` where relevant.
+- `verbatimModuleSyntax` is enabled: all type-only imports must use `import type`.
 - Avoid `any`; prefer specific types, unions, and narrowing.
 - Prefer explicit return types for exported functions and public methods.
 - Use union string literals for finite states (see `src/types.ts`).
@@ -98,24 +100,23 @@
 - Classes, interfaces, type aliases: PascalCase.
 - Functions, variables, methods: camelCase.
 - Module-level constants: UPPER_SNAKE_CASE.
+- TOML-facing config field names: snake_case (matching manifest schema).
 - Discriminant fields (e.g., event `type`): lowercase string literals.
-- Names should reflect behavior and domain intent.
 
 ## Error Handling Conventions
 - Use custom domain errors for business/validation failures:
-  - `ManifestError`, `InitError`, similar patterns.
+  - `ManifestError`, `InitError`, `ServiceGraphError`, `ServiceManagerError`, etc.
 - Validate early and throw clear, actionable error messages.
-- In `catch` blocks, safely narrow unknown values:
-  - `error instanceof Error ? error.message : String(error)`
-- For expected probe failures (optional files/integrations), catch and continue intentionally.
+- In `catch` blocks, use the `getErrorMessage()` utility from `src/shared.ts`
+  or safely narrow: `error instanceof Error ? error.message : String(error)`.
+- For expected probe failures (optional files/integrations), catch and continue.
 - Do not throw raw strings.
 - At the top level, prefer setting `process.exitCode` to signal failure.
-- Use direct `process.exit(...)` only in established shutdown/signal flows.
 
 ## Async, Lifecycle, And Resource Management
 - Prefer `async/await` and guard clauses over nested conditionals.
 - Use `void promise` only for intentional fire-and-forget work.
-- Always clean up listeners/subscriptions in teardown paths.
+- Observer pattern: `subscribe`/`onUpdate` callbacks return unsubscribe functions — always clean up.
 - Keep timeouts/retry intervals as named constants.
 - After UI state changes, call `renderer.requestRender()` where needed.
 
@@ -128,26 +129,19 @@
 - Keep `env` values explicit and stringifiable.
 
 ## Git And Collaboration Rules
-- Conventional Commits are required.
+- Conventional Commits are required (enforced by commitlint hook and CI).
 - Signed commits are required by contribution policy.
-- Allowed branch names:
-  - `main`
-  - `develop`
-  - `type/name` where type is one of:
-    - `feature`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`
+- Allowed branch names: `main`, `develop`, or `type/name` where type is one of:
+  `feature`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`.
 - Recommended local setup: `bun run init:hooks`
 
 ## Cursor And Copilot Rules
-- No Cursor rules were found:
-  - `.cursor/rules/` is not present.
-  - `.cursorrules` is not present.
-- No Copilot instructions file was found:
-  - `.github/copilot-instructions.md` is not present.
-- If any of these files are added later, treat them as high-priority repo instructions and update this document.
+- No `.cursor/rules/`, `.cursorrules`, or `.github/copilot-instructions.md` present.
+- If any are added later, treat them as high-priority and incorporate here.
 
 ## Agent Handoff Checklist
 - Scope stays focused and minimal.
 - Changes follow naming/import/style conventions in this file.
-- Lint/format/typecheck/test/build are run (or failures explained).
+- Lint/format/typecheck/test/build pass (or failures explained).
 - Behavior changes include tests when practical.
 - Commit messages follow Conventional Commits.
