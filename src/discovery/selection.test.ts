@@ -62,4 +62,16 @@ describe("discovery selection", () => {
     expect(finalized.services).toHaveLength(1);
     expect(finalized.services[0]?.name).toBe("app");
   });
+
+  test("finalization avoids names already present in manifest", () => {
+    const selection = new DiscoverySelection([
+      makeCandidate("app", "app", true),
+      makeCandidate("worker", "worker", true),
+    ]);
+
+    const finalized = finalizeSelection(selection, { usedNames: ["app"] });
+
+    expect(finalized.services[0]?.name).toBe("app-2");
+    expect(finalized.services[1]?.name).toBe("worker");
+  });
 });

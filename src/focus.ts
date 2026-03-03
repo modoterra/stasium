@@ -7,6 +7,7 @@ const MANIFEST_SHORTCUTS: Shortcut[] = [
   { key: "x", label: "stop" },
   { key: "r", label: "restart" },
   { key: "a", label: "add" },
+  { key: "i", label: "discover" },
   { key: "d", label: "delete" },
   { key: "e", label: "edit" },
   { key: "up/down", label: "select" },
@@ -39,6 +40,15 @@ const ADDING_SHORTCUTS: Shortcut[] = [
   { key: "esc", label: "cancel" },
 ];
 
+const DISCOVERING_SHORTCUTS: Shortcut[] = [
+  { key: "up/down", label: "move" },
+  { key: "space", label: "toggle" },
+  { key: "a", label: "all" },
+  { key: "n", label: "none" },
+  { key: "enter", label: "confirm" },
+  { key: "esc", label: "cancel" },
+];
+
 const GLOBAL_SHORTCUTS: Shortcut[] = [
   { key: "tab", label: "switch panel" },
   { key: "q", label: "quit" },
@@ -54,6 +64,7 @@ const MODE_SHORTCUTS: Record<AppMode, Shortcut[] | null> = {
   normal: null,
   editing: EDITING_SHORTCUTS,
   adding: ADDING_SHORTCUTS,
+  discovering: DISCOVERING_SHORTCUTS,
 };
 
 export class FocusManager {

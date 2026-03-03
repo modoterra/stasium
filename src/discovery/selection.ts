@@ -3,6 +3,10 @@ import type { DetectedCandidate, FinalizeSelectionResult, SelectionItem } from "
 
 export type DiscoverySelectionUpdateCallback = () => void;
 
+interface FinalizeSelectionOptions {
+  usedNames?: Iterable<string>;
+}
+
 const cloneService = (service: ServiceConfig): ServiceConfig => {
   return {
     name: service.name,
@@ -110,11 +114,12 @@ export class DiscoverySelection {
 
 export const finalizeSelectedCandidates = (
   candidates: DetectedCandidate[],
+  options: FinalizeSelectionOptions = {},
 ): FinalizeSelectionResult => {
   const warnings: string[] = [];
   const services: ServiceConfig[] = [];
   const finalNameByStrategy = new Map<string, string>();
-  const usedNames = new Set<string>();
+  const usedNames = new Set(options.usedNames ?? []);
 
   for (const candidate of candidates) {
     const service = cloneService(candidate.service);
@@ -159,6 +164,9 @@ export const finalizeSelectedCandidates = (
   };
 };
 
-export const finalizeSelection = (selection: DiscoverySelection): FinalizeSelectionResult => {
-  return finalizeSelectedCandidates(selection.getSelectedCandidates());
+export const finalizeSelection = (
+  selection: DiscoverySelection,
+  options: FinalizeSelectionOptions = {},
+): FinalizeSelectionResult => {
+  return finalizeSelectedCandidates(selection.getSelectedCandidates(), options);
 };

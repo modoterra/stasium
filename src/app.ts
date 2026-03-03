@@ -11,6 +11,7 @@ import {
 } from "./init";
 import { loadManifest, parseServiceBlock, renderServiceBlock, saveManifest } from "./manifest";
 import { cleanupExistingPids, syncPidFiles } from "./pidfile";
+import { getTopologicalServiceOrder } from "./service-graph";
 import { ServiceManager } from "./service-manager";
 import { fileExists, getErrorMessage } from "./shared";
 import { createShutdownHandler } from "./shutdown";
@@ -86,11 +87,38 @@ const setupKeybindings = (
   shutdown: ShutdownController,
 ) => {
   let deleteConfirming = false;
+  let discoverySelection: DiscoverySelection | null = null;
+  let discoveryOpening = false;
+  let discoveryApplying = false;
   const syncPids = async () => {
     await syncPidFiles(process.cwd(), manager.getServicePids(), {
       knownServices: manager.getConfigs().map((config) => config.name),
       logger: (message) => console.error(message),
     });
+  };
+
+  const closeDiscovery = () => {
+    discoveryApplying = false;
+    discoverySelection = null;
+    controls.hideDiscoveryOverlay();
+    focusManager.setMode("normal");
+  };
+
+  const openDiscovery = async () => {
+    if (discoveryOpening) return;
+    discoveryOpening = true;
+
+    try {
+      const detected = await detectServices(process.cwd());
+      const selection = new DiscoverySelection(detected.candidates);
+      discoverySelection = selection;
+      focusManager.setMode("discovering");
+      controls.showDiscoveryOverlay(selection, detected.warnings);
+    } catch (error) {
+      console.error(getErrorMessage(error));
+    } finally {
+      discoveryOpening = false;
+    }
   };
 
   const handleNormalManifest = async (key: KeyEvent) => {
@@ -107,6 +135,9 @@ const setupKeybindings = (
       case "a":
         focusManager.setMode("adding");
         controls.showAddOverlay();
+        break;
+      case "i":
+        await openDiscovery();
         break;
       case "d": {
         const view = manager.getSelectedView();
@@ -255,6 +286,84 @@ const setupKeybindings = (
     }
   };
 
+  const handleDiscovering = async (key: KeyEvent) => {
+    const selection = discoverySelection;
+    if (!selection) {
+      closeDiscovery();
+      return;
+    }
+
+    if (key.name === "escape") {
+      closeDiscovery();
+      return;
+    }
+
+    switch (key.name) {
+      case "up":
+        selection.moveCursor(-1);
+        return;
+      case "down":
+        selection.moveCursor(1);
+        return;
+      case "space":
+        selection.toggleCursor();
+        return;
+      case "a":
+        selection.selectAll();
+        return;
+      case "n":
+        selection.selectNone();
+        return;
+      case "enter":
+      case "return": {
+        if (discoveryApplying) return;
+        discoveryApplying = true;
+        controls.clearDiscoveryError();
+
+        try {
+          const finalized = finalizeSelection(selection, {
+            usedNames: manager.getConfigs().map((config) => config.name),
+          });
+
+          if (finalized.services.length === 0) {
+            controls.setDiscoveryError("Select at least one service to add.");
+            return;
+          }
+
+          const pendingByName = new Map(
+            finalized.services.map((service) => [service.name, service]),
+          );
+          const orderedNames = getTopologicalServiceOrder([
+            ...manager.getConfigs(),
+            ...finalized.services,
+          ]);
+
+          for (const serviceName of orderedNames) {
+            const service = pendingByName.get(serviceName);
+            if (!service) continue;
+            await manager.addService(service);
+          }
+
+          await saveManifest(manifestPath, manager.getConfigs());
+          await syncPids();
+
+          for (const warning of finalized.warnings) {
+            console.error(`Discovery warning: ${warning}`);
+          }
+
+          closeDiscovery();
+        } catch (error) {
+          controls.setDiscoveryError(getErrorMessage(error));
+        } finally {
+          discoveryApplying = false;
+        }
+        return;
+      }
+      default:
+        return;
+    }
+  };
+
   const handleDeleteConfirm = async (key: KeyEvent) => {
     if (key.name === "y") {
       await manager.removeSelected();
@@ -309,6 +418,11 @@ const setupKeybindings = (
 
       if (mode === "adding") {
         await handleAdding(key);
+        return;
+      }
+
+      if (mode === "discovering") {
+        await handleDiscovering(key);
         return;
       }
 

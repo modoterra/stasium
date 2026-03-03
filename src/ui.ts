@@ -220,6 +220,10 @@ export interface UiControls {
   clearAddError: () => void;
   showDeleteConfirm: (name: string) => void;
   hideDeleteConfirm: () => void;
+  showDiscoveryOverlay: (selection: DiscoverySelection, warnings: string[]) => void;
+  hideDiscoveryOverlay: () => void;
+  setDiscoveryError: (message: string) => void;
+  clearDiscoveryError: () => void;
   renderAll: () => void;
   scrollLogs: (delta: number) => void;
   scrollLogsPage: (deltaPages: number) => void;
@@ -489,6 +493,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     "switch panel": "switch",
     "next field": "next",
     follow: "tail",
+    discover: "scan",
   };
 
   const shortcutPriority: Record<string, number> = {
@@ -501,8 +506,13 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     clear: 75,
     follow: 78,
     add: 70,
+    discover: 72,
     delete: 70,
     edit: 70,
+    move: 85,
+    toggle: 85,
+    all: 75,
+    none: 75,
     "switch panel": 95,
     quit: 100,
     confirm: 95,
@@ -589,6 +599,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
     if (mode === "adding") {
       return "adding service  |  enter confirm  |  tab next field  |  esc cancel";
+    }
+
+    if (mode === "discovering") {
+      return "discovering services  |  up/down move  |  space toggle  |  enter add selected  |  esc cancel";
     }
 
     const activePanel = focusManager.getActivePanel();
@@ -769,6 +783,64 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   });
   addOverlay.add(addError);
 
+  const discoveryOverlay = new BoxRenderable(renderer, {
+    id: "discovery-overlay",
+    width: 78,
+    backgroundColor: palette.modal,
+    border: true,
+    borderStyle: "single",
+    borderColor: palette.borderActive,
+    flexDirection: "column",
+    padding: 1,
+    gap: 1,
+    visible: false,
+  });
+
+  const discoveryTitle = new TextRenderable(renderer, {
+    content: "Discover services (enter add, space toggle, esc cancel)",
+    fg: palette.accent,
+    attributes: TextAttributes.BOLD,
+    wrapMode: "none",
+    truncate: true,
+  });
+  discoveryOverlay.add(discoveryTitle);
+
+  const discoverySummary = new TextRenderable(renderer, {
+    content: "",
+    fg: palette.muted,
+    wrapMode: "none",
+    truncate: true,
+  });
+  discoveryOverlay.add(discoverySummary);
+
+  const discoverySelectionContainer = new BoxRenderable(renderer, {
+    flexDirection: "column",
+    gap: 0,
+  });
+  discoveryOverlay.add(discoverySelectionContainer);
+
+  const discoveryWarningTitle = new TextRenderable(renderer, {
+    content: "",
+    fg: palette.amber,
+    wrapMode: "none",
+    truncate: true,
+  });
+  discoveryOverlay.add(discoveryWarningTitle);
+
+  const discoveryWarningContainer = new BoxRenderable(renderer, {
+    flexDirection: "column",
+    gap: 0,
+  });
+  discoveryOverlay.add(discoveryWarningContainer);
+
+  const discoveryError = new TextRenderable(renderer, {
+    content: "",
+    fg: palette.red,
+    wrapMode: "none",
+    truncate: true,
+  });
+  discoveryOverlay.add(discoveryError);
+
   const deleteOverlay = new BoxRenderable(renderer, {
     id: "delete-overlay",
     width: 56,
@@ -797,6 +869,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   overlayBg.add(editOverlay);
   overlayBg.add(addOverlay);
+  overlayBg.add(discoveryOverlay);
   overlayBg.add(deleteOverlay);
 
   root.add(overlayBg);
@@ -810,6 +883,11 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   let lastSelectedIndex = -1;
   let lastLogSource: "manifest" | "docker" = "manifest";
   let addFocusField: "name" | "command" = "name";
+  let discoverySelection: DiscoverySelection | null = null;
+  let discoveryWarnings: string[] = [];
+  let discoverySelectionLines: TextRenderable[] = [];
+  let discoveryWarningLines: TextRenderable[] = [];
+  let unsubDiscoverySelection: (() => void) | null = null;
 
   const panelTitleColor = (panel: PanelId): string =>
     focusManager.isPanelActive(panel) ? palette.accent : palette.active;
@@ -848,6 +926,81 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     addNameField.borderColor = addFocusField === "name" ? palette.borderActive : palette.border;
     addCommandField.borderColor =
       addFocusField === "command" ? palette.borderActive : palette.border;
+  };
+
+  const clearDiscoverySelectionLines = () => {
+    for (const line of discoverySelectionLines) {
+      discoverySelectionContainer.remove(line.id);
+      line.destroy();
+    }
+    discoverySelectionLines = [];
+  };
+
+  const clearDiscoveryWarningLines = () => {
+    for (const line of discoveryWarningLines) {
+      discoveryWarningContainer.remove(line.id);
+      line.destroy();
+    }
+    discoveryWarningLines = [];
+  };
+
+  const rebuildDiscoverySelection = () => {
+    clearDiscoverySelectionLines();
+
+    if (!discoverySelection) {
+      discoverySummary.content = "No discovery session.";
+      return;
+    }
+
+    const items = discoverySelection.getItems();
+    const total = items.length;
+    const selectedCount = discoverySelection.getSelectedCount();
+
+    discoverySummary.content =
+      total === 0
+        ? "No services detected in this workspace."
+        : `Detected ${total} service${total === 1 ? "" : "s"} (${selectedCount} selected)`;
+
+    const cursor = discoverySelection.getCursor();
+    items.forEach((item, index) => {
+      const active = index === cursor;
+      const line = new TextRenderable(renderer, {
+        id: `discovery-selection-${index}`,
+        content: formatInitSelectionLine(item, active),
+        fg: active ? palette.accent : item.selected ? palette.green : palette.muted,
+        wrapMode: "none",
+        truncate: true,
+      });
+      discoverySelectionContainer.add(line);
+      discoverySelectionLines.push(line);
+    });
+  };
+
+  const rebuildDiscoveryWarnings = () => {
+    clearDiscoveryWarningLines();
+
+    if (discoveryWarnings.length === 0) {
+      discoveryWarningTitle.content = "";
+      return;
+    }
+
+    discoveryWarningTitle.content = "Warnings:";
+    discoveryWarnings.forEach((warning, index) => {
+      const line = new TextRenderable(renderer, {
+        id: `discovery-warning-${index}`,
+        content: `- ${warning}`,
+        fg: palette.amber,
+        wrapMode: "none",
+        truncate: true,
+      });
+      discoveryWarningContainer.add(line);
+      discoveryWarningLines.push(line);
+    });
+  };
+
+  const renderDiscoveryOverlay = () => {
+    rebuildDiscoverySelection();
+    rebuildDiscoveryWarnings();
   };
 
   const updateHeader = () => {
@@ -1035,6 +1188,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     editOverlay.width = compactOverlay ? "94%" : "72%";
     editOverlay.height = compactOverlay ? "82%" : "68%";
     addOverlay.width = compactOverlay ? "92%" : 60;
+    discoveryOverlay.width = compactOverlay ? "94%" : 78;
     deleteOverlay.width = compactOverlay ? "88%" : 56;
 
     renderAll();
@@ -1110,6 +1264,16 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     addCommandInput.focusedBackgroundColor = palette.inputFocus;
     applyAddFocusStyles();
 
+    discoveryOverlay.backgroundColor = palette.modal;
+    discoveryOverlay.borderColor = palette.borderActive;
+    discoveryTitle.fg = palette.accent;
+    discoverySummary.fg = palette.muted;
+    discoveryWarningTitle.fg = palette.amber;
+    discoveryError.fg = palette.red;
+    if (discoveryOverlay.visible || discoverySelection !== null) {
+      renderDiscoveryOverlay();
+    }
+
     deleteOverlay.backgroundColor = palette.modal;
     deleteOverlay.borderColor = palette.red;
     deleteTitle.fg = palette.red;
@@ -1135,6 +1299,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       overlayBg.visible = true;
       editOverlay.visible = true;
       addOverlay.visible = false;
+      discoveryOverlay.visible = false;
       deleteOverlay.visible = false;
       editError.content = "";
       editTextarea.initialValue = toml;
@@ -1168,6 +1333,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       overlayBg.visible = true;
       addOverlay.visible = true;
       editOverlay.visible = false;
+      discoveryOverlay.visible = false;
       deleteOverlay.visible = false;
       addError.content = "";
       addFocusField = "name";
@@ -1225,6 +1391,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       deleteOverlay.visible = true;
       editOverlay.visible = false;
       addOverlay.visible = false;
+      discoveryOverlay.visible = false;
       deleteMessage.content = `Delete "${name}"? (y/n)`;
       renderer.requestRender();
     },
@@ -1232,6 +1399,51 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     hideDeleteConfirm() {
       overlayBg.visible = false;
       deleteOverlay.visible = false;
+      renderer.requestRender();
+    },
+
+    showDiscoveryOverlay(selection: DiscoverySelection, warnings: string[]) {
+      overlayBg.visible = true;
+      discoveryOverlay.visible = true;
+      editOverlay.visible = false;
+      addOverlay.visible = false;
+      deleteOverlay.visible = false;
+      discoveryError.content = "";
+
+      unsubDiscoverySelection?.();
+      discoverySelection = selection;
+      discoveryWarnings = [...warnings];
+      unsubDiscoverySelection = selection.onUpdate(() => {
+        renderDiscoveryOverlay();
+        renderer.requestRender();
+      });
+
+      renderDiscoveryOverlay();
+      renderer.requestRender();
+    },
+
+    hideDiscoveryOverlay() {
+      overlayBg.visible = false;
+      discoveryOverlay.visible = false;
+      discoveryError.content = "";
+
+      unsubDiscoverySelection?.();
+      unsubDiscoverySelection = null;
+      discoverySelection = null;
+      discoveryWarnings = [];
+      clearDiscoverySelectionLines();
+      clearDiscoveryWarningLines();
+
+      renderer.requestRender();
+    },
+
+    setDiscoveryError(message: string) {
+      discoveryError.content = message;
+      renderer.requestRender();
+    },
+
+    clearDiscoveryError() {
+      discoveryError.content = "";
       renderer.requestRender();
     },
 
@@ -1319,6 +1531,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     unsubManager();
     unsubFocus();
     unsubDocker();
+    unsubDiscoverySelection?.();
     logStyle.destroy();
     root.destroy();
   };

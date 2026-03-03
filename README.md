@@ -21,6 +21,10 @@ bun run index.ts init
 `init` opens an interactive selector of detected services. Use `up/down` to move,
 `space` to toggle, `a` to select all, `n` to clear, and `enter` to create `stasium.toml`.
 
+Inside the runtime TUI, focus the Manifest panel and press `i` to discover services
+again and add them to the current manifest (`up/down` move, `space` toggle, `a` all,
+`n` none, `enter` add selected, `esc` cancel).
+
 Discovery strategies are data-driven via TOML:
 
 - Built-in catalog: `src/discovery/strategies.toml`

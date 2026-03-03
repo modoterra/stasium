@@ -53,4 +53,4 @@ export interface Shortcut {
   label: string;
 }
 
-export type AppMode = "normal" | "editing" | "adding";
+export type AppMode = "normal" | "editing" | "adding" | "discovering";
