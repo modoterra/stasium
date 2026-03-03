@@ -63,6 +63,12 @@ jobs:
         with:
           path: release
 
+      - name: Rename artifacts
+        run: |
+          mv release/stasium-ubuntu-latest/stasium release/stasium-linux
+          mv release/stasium-macos-latest/stasium release/stasium-macos
+          mv release/stasium-windows-latest/stasium.exe release/stasium-windows.exe
+
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,6 +76,6 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             --title "${{ github.ref_name }}" \
             --generate-notes \
-            release/stasium-ubuntu-latest/stasium#stasium-linux \
-            release/stasium-macos-latest/stasium#stasium-macos \
-            release/stasium-windows-latest/stasium.exe#stasium-windows.exe
+            release/stasium-linux \
+            release/stasium-macos \
+            release/stasium-windows.exe
