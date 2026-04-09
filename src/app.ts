@@ -175,6 +175,12 @@ const setupKeybindings = (
     }
 
     switch (key.name) {
+      case "home":
+        controls.scrollLogsToTop();
+        break;
+      case "end":
+        controls.scrollLogsToBottom();
+        break;
       case "pageup":
       case "pgup":
         controls.scrollLogsPage(-1);
@@ -443,6 +449,26 @@ const setupKeybindings = (
         return;
       }
 
+      if (key.name === "home") {
+        controls.scrollLogsToTop();
+        return;
+      }
+
+      if (key.name === "end") {
+        controls.scrollLogsToBottom();
+        return;
+      }
+
+      if (key.name === "pageup" || key.name === "pgup") {
+        controls.scrollLogsPage(-1);
+        return;
+      }
+
+      if (key.name === "pagedown" || key.name === "pgdn") {
+        controls.scrollLogsPage(1);
+        return;
+      }
+
       // Panel-specific shortcuts
       const panel = focusManager.getActivePanel();
 
@@ -611,8 +637,9 @@ export const run = async () => {
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
     onDestroy: () => {
-      shutdownRef.current?.uninstall();
+      void shutdownRef.current?.run("Renderer destroyed; shutting down services.");
       teardownRef.current?.();
+      teardownRef.current = null;
     },
   });
 

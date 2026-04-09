@@ -1,11 +1,9 @@
 import {
   BoxRenderable,
   type CliRenderer,
-  CodeRenderable,
   InputRenderable,
   RGBA,
   ScrollBoxRenderable,
-  SyntaxStyle,
   TextAttributes,
   TextRenderable,
   TextareaRenderable,
@@ -15,12 +13,14 @@ import type { DockerManager } from "./docker";
 import type { FocusManager } from "./focus";
 import type { ServiceManager, ServiceView } from "./service-manager";
 import { formatCommandSpec } from "./shared";
-import type { DockerService, Manifest, PanelId, Shortcut } from "./types";
+import type { DockerService, LogEntry, Manifest, PanelId, Shortcut } from "./types";
 
 interface Palette {
   active: string;
   muted: string;
   panel: string;
+  panelActive: string;
+  selection: string;
   element: string;
   accent: string;
   secondary: string;
@@ -39,17 +39,19 @@ interface Palette {
 const dark: Palette = {
   active: "#eeeeee",
   muted: "#8a8a8a",
-  panel: "#141414",
-  element: "#1e1e1e",
+  panel: "#161616",
+  panelActive: "#222222",
+  selection: "#2c2c2c",
+  element: "#1d1d1d",
   accent: "#fab283",
   secondary: "#5c9cf5",
   amber: "#f5a742",
   green: "#7fd88f",
   red: "#e06c75",
-  bg: "#0a0a0a",
+  bg: "transparent",
   border: "#484848",
   borderActive: "#606060",
-  overlay: RGBA.fromInts(0, 0, 0, 150),
+  overlay: RGBA.fromInts(0, 0, 0, 0),
   modal: "#141414",
   input: "#1e1e1e",
   inputFocus: "#282828",
@@ -58,17 +60,19 @@ const dark: Palette = {
 const light: Palette = {
   active: "#1a1a1a",
   muted: "#8a8a8a",
-  panel: "#fafafa",
-  element: "#f5f5f5",
+  panel: "#ececec",
+  panelActive: "#dfdfdf",
+  selection: "#d4d4d4",
+  element: "#e4e4e4",
   accent: "#3b7dd8",
   secondary: "#7b5bb6",
   amber: "#d68c27",
   green: "#3d9a57",
   red: "#d1383d",
-  bg: "#ffffff",
+  bg: "transparent",
   border: "#b8b8b8",
   borderActive: "#a0a0a0",
-  overlay: RGBA.fromInts(0, 0, 0, 110),
+  overlay: RGBA.fromInts(0, 0, 0, 0),
   modal: "#ffffff",
   input: "#ffffff",
   inputFocus: "#f5f5f5",
@@ -76,6 +80,26 @@ const light: Palette = {
 
 const getTheme = (mode: "dark" | "light" | null): Palette => (mode === "light" ? light : dark);
 const VERSION_LABEL = "Stasium v0.2.3 (32423)";
+const APP_INSET_X = 2;
+const APP_INSET_Y = 1;
+const PANEL_GAP_X = 2;
+const PANEL_GAP_Y = 1;
+const PANEL_PADDING_X = 2;
+const PANEL_PADDING_Y = 1;
+const PANEL_CONTENT_GAP_Y = 1;
+const INLINE_GAP_X = 2;
+const INLINE_GAP_Y = 1;
+const COMPACT_GAP = 0;
+const INPUT_PADDING_X = 1;
+const SCROLLBAR_PADDING_RIGHT = 1;
+const LOG_ROW_GAP_X = 1;
+const LOG_TIMESTAMP_WIDTH = 8;
+const LOG_STREAM_WIDTH = 3;
+const LOG_MIN_MESSAGE_WIDTH = 4;
+const MIN_LOG_PANEL_WIDTH = 56;
+const MIN_APP_WIDTH = 80;
+const MIN_APP_HEIGHT_WITH_DOCKER = 35;
+const MIN_APP_HEIGHT_NO_DOCKER = 28;
 
 const stateColor = (state: ServiceView["state"], palette: Palette): string => {
   switch (state) {
@@ -116,10 +140,6 @@ const formatDockerState = (state: DockerService["state"]) => state.padEnd(10, " 
 const formatExit = (exit: number | null) => {
   if (exit === null) return "--";
   return String(exit);
-};
-
-const createLogSyntaxStyle = (): SyntaxStyle => {
-  return SyntaxStyle.create();
 };
 
 const clamp = (value: number, min: number, max: number): number =>
@@ -197,6 +217,37 @@ const ensureIndexVisible = (box: ScrollBoxRenderable, index: number): void => {
   }
 };
 
+const getScrollBoxMaxTop = (box: ScrollBoxRenderable): number =>
+  Math.max(0, box.scrollHeight - Math.max(1, Math.floor(box.viewport.height)));
+
+const formatLogTimestamp = (value: string): string => {
+  const time = value.slice(11, 19);
+  return time.length === LOG_TIMESTAMP_WIDTH ? time : truncateText(value, LOG_TIMESTAMP_WIDTH);
+};
+
+const formatLogStream = (stream: LogEntry["stream"]): string =>
+  stream === "stderr" ? "ERR" : "OUT";
+
+const truncateLogMessage = (value: string, max: number): { text: string; hidden: number } => {
+  if (max <= 0) return { text: "", hidden: value.length };
+  if (value.length <= max) return { text: value, hidden: 0 };
+  if (max <= 3) return { text: value.slice(0, max), hidden: value.length - max };
+
+  const visibleChars = max - 3;
+  return {
+    text: `${value.slice(0, visibleChars)}...`,
+    hidden: value.length - visibleChars,
+  };
+};
+
+interface LogRowRenderable {
+  box: BoxRenderable;
+  timestamp: TextRenderable;
+  stream: TextRenderable;
+  message: TextRenderable;
+  meta: TextRenderable;
+}
+
 export interface UiOptions {
   renderer: CliRenderer;
   manifest: Manifest;
@@ -238,28 +289,31 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   const { renderer, manifest, manager, focusManager, dockerManager } = opts;
   const hasDocker = dockerManager !== null;
   let palette = getTheme(renderer.themeMode);
-  const logStyle = createLogSyntaxStyle();
 
   const root = new BoxRenderable(renderer, {
     width: "100%",
     height: "100%",
     backgroundColor: palette.bg,
     flexDirection: "column",
+    paddingTop: APP_INSET_Y,
+    paddingBottom: APP_INSET_Y,
+    paddingLeft: APP_INSET_X,
+    paddingRight: APP_INSET_X,
+    rowGap: PANEL_GAP_Y,
   });
 
   const header = new BoxRenderable(renderer, {
     flexShrink: 0,
+    width: "100%",
     backgroundColor: palette.panel,
-    border: ["bottom"],
-    borderColor: palette.border,
-    paddingTop: 1,
-    paddingBottom: 1,
-    paddingLeft: 2,
-    paddingRight: 2,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    gap: 2,
+    columnGap: INLINE_GAP_X,
   });
 
   const headerLeft = new BoxRenderable(renderer, {
@@ -289,7 +343,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   const headerRight = new BoxRenderable(renderer, {
     flexDirection: "column",
     alignItems: "flex-end",
-    gap: 0,
+    gap: COMPACT_GAP,
     flexShrink: 0,
   });
 
@@ -315,17 +369,15 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   const main = new BoxRenderable(renderer, {
     flexGrow: 1,
-    paddingTop: 1,
-    paddingLeft: 1,
-    paddingRight: 1,
     flexDirection: "row",
-    gap: 1,
+    columnGap: PANEL_GAP_X,
+    rowGap: PANEL_GAP_Y,
   });
 
   const sideColumn = new BoxRenderable(renderer, {
     flexDirection: "column",
     flexShrink: 0,
-    gap: 1,
+    rowGap: PANEL_GAP_Y,
   });
 
   const createPanel = (title: string, panelId: PanelId) => {
@@ -333,24 +385,24 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       flexGrow: 1,
       flexDirection: "column",
       backgroundColor: palette.panel,
-      border: true,
-      borderStyle: "single",
-      borderColor: palette.border,
-      padding: 1,
-      gap: 1,
+      paddingTop: PANEL_PADDING_Y,
+      paddingBottom: PANEL_PADDING_Y,
+      paddingLeft: PANEL_PADDING_X,
+      paddingRight: PANEL_PADDING_X,
+      rowGap: PANEL_CONTENT_GAP_Y,
     });
 
     const heading = new BoxRenderable(renderer, {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "center",
-      gap: 1,
+      columnGap: INLINE_GAP_X,
       flexShrink: 0,
     });
 
     const titleText = new TextRenderable(renderer, {
       content: title,
-      fg: focusManager.isPanelActive(panelId) ? palette.accent : palette.active,
+      fg: focusManager.isPanelActive(panelId) ? palette.accent : palette.muted,
       attributes: TextAttributes.BOLD,
       wrapMode: "none",
       truncate: true,
@@ -382,11 +434,11 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     scrollY: true,
     scrollX: false,
     viewportOptions: {
-      paddingRight: 1,
+      paddingRight: SCROLLBAR_PADDING_RIGHT,
     },
     contentOptions: {
       flexDirection: "column",
-      gap: 0,
+      gap: COMPACT_GAP,
     },
     verticalScrollbarOptions: {
       trackOptions: {
@@ -414,11 +466,11 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       scrollY: true,
       scrollX: false,
       viewportOptions: {
-        paddingRight: 1,
+        paddingRight: SCROLLBAR_PADDING_RIGHT,
       },
       contentOptions: {
         flexDirection: "column",
-        gap: 0,
+        gap: COMPACT_GAP,
       },
       verticalScrollbarOptions: {
         trackOptions: {
@@ -436,17 +488,26 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     metaText: logPanelMeta,
   } = createPanel("Logs", "logs");
 
-  const logCode = new CodeRenderable(renderer, {
-    id: "log-code",
-    content: "",
-    syntaxStyle: logStyle,
+  const logList = new ScrollBoxRenderable(renderer, {
+    id: "log-list",
     flexGrow: 1,
-    wrapMode: "char",
-    drawUnstyledText: true,
-    fg: palette.active,
-    bg: palette.panel,
+    scrollY: true,
+    scrollX: false,
+    viewportOptions: {
+      paddingRight: SCROLLBAR_PADDING_RIGHT,
+    },
+    contentOptions: {
+      flexDirection: "column",
+      gap: COMPACT_GAP,
+    },
+    verticalScrollbarOptions: {
+      trackOptions: {
+        backgroundColor: palette.element,
+        foregroundColor: palette.border,
+      },
+    },
   });
-  logPanel.add(logCode);
+  logPanel.add(logList);
 
   sideColumn.add(manifestPanel);
   if (dockerPanel) {
@@ -455,38 +516,58 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   main.add(sideColumn);
   main.add(logPanel);
 
-  const footer = new BoxRenderable(renderer, {
+  const footerStack = new BoxRenderable(renderer, {
     flexShrink: 0,
-    backgroundColor: palette.panel,
-    border: ["top"],
-    borderColor: palette.border,
-    paddingTop: 1,
-    paddingBottom: 1,
-    paddingLeft: 2,
-    paddingRight: 2,
     flexDirection: "column",
-    gap: 1,
+    width: "100%",
+    rowGap: PANEL_GAP_Y,
   });
 
-  const footerState = new TextRenderable(renderer, {
-    content: "",
-    fg: palette.muted,
-    wrapMode: "none",
-    truncate: true,
+  const footerStatePanel = new BoxRenderable(renderer, {
+    flexShrink: 0,
+    width: "100%",
+    backgroundColor: palette.panel,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
+  });
+
+  const footerShortcutsPanel = new BoxRenderable(renderer, {
+    flexShrink: 0,
+    width: "100%",
+    backgroundColor: palette.panel,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
+  });
+
+  const footerStateRow = new BoxRenderable(renderer, {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    columnGap: INLINE_GAP_X,
+    rowGap: INLINE_GAP_Y,
+    flexWrap: "wrap",
   });
 
   const footerRow = new BoxRenderable(renderer, {
     width: "100%",
     flexDirection: "row",
-    justifyContent: "flex-end",
+    justifyContent: "center",
     alignItems: "center",
-    gap: 2,
+    columnGap: INLINE_GAP_X,
+    rowGap: INLINE_GAP_Y,
     flexWrap: "wrap",
   });
 
-  footer.add(footerState);
-  footer.add(footerRow);
+  footerStatePanel.add(footerStateRow);
+  footerShortcutsPanel.add(footerRow);
+  footerStack.add(footerStatePanel);
+  footerStack.add(footerShortcutsPanel);
 
+  let footerStateItems: TextRenderable[] = [];
   let footerItems: TextRenderable[] = [];
 
   const compactShortcutLabels: Record<string, string> = {
@@ -556,7 +637,11 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   };
 
   const getFooterLayout = () => {
-    const shortcuts = focusManager.getShortcuts();
+    const shortcuts = logsPanelVisible
+      ? focusManager.getShortcuts()
+      : focusManager
+          .getShortcuts()
+          .filter((shortcut) => shortcut.label !== "log page" && shortcut.label !== "log jump");
     const available = Math.max(0, renderer.width - 30);
 
     if (measureFooterWidth(shortcuts, "full") <= available) {
@@ -591,18 +676,33 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     }
   };
 
-  const buildFooterState = (): string => {
+  const buildFooterState = (): Array<{ content: string; fg: string }> => {
     const mode = focusManager.getMode();
     if (mode === "editing") {
-      return "editing service block  |  ctrl+s save  |  esc cancel";
+      return [
+        { content: "editing service block", fg: palette.accent },
+        { content: "ctrl+s save", fg: palette.secondary },
+        { content: "esc cancel", fg: palette.muted },
+      ];
     }
 
     if (mode === "adding") {
-      return "adding service  |  enter confirm  |  tab next field  |  esc cancel";
+      return [
+        { content: "adding service", fg: palette.accent },
+        { content: "enter confirm", fg: palette.secondary },
+        { content: "tab next field", fg: palette.muted },
+        { content: "esc cancel", fg: palette.muted },
+      ];
     }
 
     if (mode === "discovering") {
-      return "discovering services  |  up/down move  |  space toggle  |  enter add selected  |  esc cancel";
+      return [
+        { content: "discovering services", fg: palette.accent },
+        { content: "up/down move", fg: palette.secondary },
+        { content: "space toggle", fg: palette.muted },
+        { content: "enter add selected", fg: palette.secondary },
+        { content: "esc cancel", fg: palette.muted },
+      ];
     }
 
     const activePanel = focusManager.getActivePanel();
@@ -616,17 +716,47 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const manifestState = selectedManifest?.state.toLowerCase() ?? "none";
     const dockerState = selectedDocker?.state ?? "none";
 
-    return `panel:${panelName(activePanel)}  |  svc:${selectedManifest?.name ?? "-"} (${manifestState})  |  docker:${selectedDocker?.name ?? "-"} (${dockerState})  |  logs:${activeLogName} ${tailState}`;
+    return [
+      { content: `panel:${panelName(activePanel)}`, fg: panelTitleColor(activePanel) },
+      {
+        content: `svc:${selectedManifest?.name ?? "-"} (${manifestState})`,
+        fg: selectedManifest ? stateColor(selectedManifest.state, palette) : palette.muted,
+      },
+      {
+        content: `docker:${selectedDocker?.name ?? "-"} (${dockerState})`,
+        fg: selectedDocker ? dockerStateColor(selectedDocker.state, palette) : palette.muted,
+      },
+      {
+        content: logsPanelVisible ? `logs:${activeLogName} ${tailState}` : "logs:hidden",
+        fg: logsPanelVisible ? (logsFollowTail ? palette.secondary : palette.muted) : palette.muted,
+      },
+    ];
   };
 
   const rebuildFooter = () => {
+    for (const item of footerStateItems) {
+      footerStateRow.remove(item.id);
+      item.destroy();
+    }
+    footerStateItems = [];
+
     for (const item of footerItems) {
       footerRow.remove(item.id);
       item.destroy();
     }
     footerItems = [];
 
-    footerState.content = buildFooterState();
+    buildFooterState().forEach((segment, index) => {
+      const item = new TextRenderable(renderer, {
+        id: `footer-state-${index}`,
+        content: segment.content,
+        fg: segment.fg,
+        wrapMode: "none",
+        truncate: true,
+      });
+      footerStateRow.add(item);
+      footerStateItems.push(item);
+    });
 
     const { shortcuts, labelMode } = getFooterLayout();
     shortcuts.forEach((shortcut, index) => {
@@ -650,7 +780,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   root.add(header);
   root.add(main);
-  root.add(footer);
+  root.add(footerStack);
 
   const overlayBg = new BoxRenderable(renderer, {
     id: "overlay-bg",
@@ -669,12 +799,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     width: "72%",
     height: "68%",
     backgroundColor: palette.modal,
-    border: true,
-    borderStyle: "single",
-    borderColor: palette.borderActive,
     flexDirection: "column",
-    padding: 1,
-    gap: 1,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
+    rowGap: PANEL_CONTENT_GAP_Y,
     visible: false,
   });
 
@@ -707,12 +837,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     id: "add-overlay",
     width: 60,
     backgroundColor: palette.modal,
-    border: true,
-    borderStyle: "single",
-    borderColor: palette.borderActive,
     flexDirection: "column",
-    padding: 1,
-    gap: 1,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
+    rowGap: PANEL_CONTENT_GAP_Y,
     visible: false,
   });
 
@@ -731,11 +861,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   const addNameField = new BoxRenderable(renderer, {
     width: "100%",
-    border: true,
-    borderStyle: "single",
-    borderColor: palette.border,
     backgroundColor: palette.input,
-    paddingX: 1,
+    paddingX: INPUT_PADDING_X,
   });
 
   const addNameInput = new InputRenderable(renderer, {
@@ -757,11 +884,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   const addCommandField = new BoxRenderable(renderer, {
     width: "100%",
-    border: true,
-    borderStyle: "single",
-    borderColor: palette.border,
     backgroundColor: palette.input,
-    paddingX: 1,
+    paddingX: INPUT_PADDING_X,
   });
 
   const addCommandInput = new InputRenderable(renderer, {
@@ -787,12 +911,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     id: "discovery-overlay",
     width: 78,
     backgroundColor: palette.modal,
-    border: true,
-    borderStyle: "single",
-    borderColor: palette.borderActive,
     flexDirection: "column",
-    padding: 1,
-    gap: 1,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
+    rowGap: PANEL_CONTENT_GAP_Y,
     visible: false,
   });
 
@@ -815,7 +939,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   const discoverySelectionContainer = new BoxRenderable(renderer, {
     flexDirection: "column",
-    gap: 0,
+    gap: COMPACT_GAP,
   });
   discoveryOverlay.add(discoverySelectionContainer);
 
@@ -829,7 +953,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   const discoveryWarningContainer = new BoxRenderable(renderer, {
     flexDirection: "column",
-    gap: 0,
+    gap: COMPACT_GAP,
   });
   discoveryOverlay.add(discoveryWarningContainer);
 
@@ -845,12 +969,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     id: "delete-overlay",
     width: 56,
     backgroundColor: palette.modal,
-    border: true,
-    borderStyle: "single",
-    borderColor: palette.red,
     flexDirection: "column",
-    padding: 1,
-    gap: 1,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
+    rowGap: PANEL_CONTENT_GAP_Y,
     visible: false,
   });
 
@@ -867,17 +991,117 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   });
   deleteOverlay.add(deleteMessage);
 
+  const tooSmallOverlay = new BoxRenderable(renderer, {
+    id: "too-small-overlay",
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    visible: false,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: palette.bg,
+  });
+
+  const tooSmallCard = new BoxRenderable(renderer, {
+    backgroundColor: palette.panel,
+    paddingTop: PANEL_PADDING_Y + 1,
+    paddingBottom: PANEL_PADDING_Y + 1,
+    paddingLeft: PANEL_PADDING_X + 1,
+    paddingRight: PANEL_PADDING_X + 1,
+    flexDirection: "column",
+    alignItems: "center",
+    rowGap: PANEL_CONTENT_GAP_Y,
+  });
+
+  const tooSmallTitle = new TextRenderable(renderer, {
+    content: "Terminal size too small",
+    fg: palette.active,
+    attributes: TextAttributes.BOLD,
+  });
+  tooSmallCard.add(tooSmallTitle);
+
+  const tooSmallCurrentLabel = new TextRenderable(renderer, {
+    content: "Current size:",
+    fg: palette.muted,
+  });
+  tooSmallCard.add(tooSmallCurrentLabel);
+
+  const tooSmallCurrentRow = new BoxRenderable(renderer, {
+    flexDirection: "row",
+    columnGap: INLINE_GAP_X,
+    alignItems: "center",
+  });
+  const tooSmallCurrentWidthLabel = new TextRenderable(renderer, {
+    content: "Width =",
+    fg: palette.muted,
+  });
+  const tooSmallCurrentWidthValue = new TextRenderable(renderer, {
+    content: "0",
+    fg: palette.green,
+  });
+  const tooSmallCurrentHeightLabel = new TextRenderable(renderer, {
+    content: "Height =",
+    fg: palette.muted,
+  });
+  const tooSmallCurrentHeightValue = new TextRenderable(renderer, {
+    content: "0",
+    fg: palette.green,
+  });
+  tooSmallCurrentRow.add(tooSmallCurrentWidthLabel);
+  tooSmallCurrentRow.add(tooSmallCurrentWidthValue);
+  tooSmallCurrentRow.add(tooSmallCurrentHeightLabel);
+  tooSmallCurrentRow.add(tooSmallCurrentHeightValue);
+  tooSmallCard.add(tooSmallCurrentRow);
+
+  const tooSmallRequiredLabel = new TextRenderable(renderer, {
+    content: "Needed for current config:",
+    fg: palette.muted,
+  });
+  tooSmallCard.add(tooSmallRequiredLabel);
+
+  const tooSmallRequiredRow = new BoxRenderable(renderer, {
+    flexDirection: "row",
+    columnGap: INLINE_GAP_X,
+    alignItems: "center",
+  });
+  const tooSmallRequiredWidthLabel = new TextRenderable(renderer, {
+    content: "Width =",
+    fg: palette.muted,
+  });
+  const tooSmallRequiredWidthValue = new TextRenderable(renderer, {
+    content: String(MIN_APP_WIDTH),
+    fg: palette.green,
+  });
+  const tooSmallRequiredHeightLabel = new TextRenderable(renderer, {
+    content: "Height =",
+    fg: palette.muted,
+  });
+  const tooSmallRequiredHeightValue = new TextRenderable(renderer, {
+    content: "0",
+    fg: palette.green,
+  });
+  tooSmallRequiredRow.add(tooSmallRequiredWidthLabel);
+  tooSmallRequiredRow.add(tooSmallRequiredWidthValue);
+  tooSmallRequiredRow.add(tooSmallRequiredHeightLabel);
+  tooSmallRequiredRow.add(tooSmallRequiredHeightValue);
+  tooSmallCard.add(tooSmallRequiredRow);
+
+  tooSmallOverlay.add(tooSmallCard);
+
   overlayBg.add(editOverlay);
   overlayBg.add(addOverlay);
   overlayBg.add(discoveryOverlay);
   overlayBg.add(deleteOverlay);
 
   root.add(overlayBg);
+  root.add(tooSmallOverlay);
   renderer.root.add(root);
 
   let listLines: TextRenderable[] = [];
   let dockerLines: TextRenderable[] = [];
+  let logLines: LogRowRenderable[] = [];
   let logSource: "manifest" | "docker" = "manifest";
+  let logsPanelVisible = true;
   let logsFollowTail = true;
   let lastLogVersion = -1;
   let lastSelectedIndex = -1;
@@ -890,7 +1114,55 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   let unsubDiscoverySelection: (() => void) | null = null;
 
   const panelTitleColor = (panel: PanelId): string =>
-    focusManager.isPanelActive(panel) ? palette.accent : palette.active;
+    focusManager.isPanelActive(panel) ? palette.accent : palette.muted;
+
+  const panelBackgroundColor = (panel: PanelId): string =>
+    focusManager.isPanelActive(panel) ? palette.panelActive : palette.panel;
+
+  const listSelectionBackground = (): string => palette.selection;
+
+  const focusWhenVisible = (target: BoxRenderable, focus: () => void): void => {
+    queueMicrotask(() => {
+      if (!target.visible) return;
+      focus();
+      renderer.requestRender();
+    });
+  };
+
+  const updateTooSmallState = (): boolean => {
+    const minHeight = hasDocker ? MIN_APP_HEIGHT_WITH_DOCKER : MIN_APP_HEIGHT_NO_DOCKER;
+    const tooSmall = renderer.width < MIN_APP_WIDTH || renderer.height < minHeight;
+    const modalVisible =
+      editOverlay.visible ||
+      addOverlay.visible ||
+      discoveryOverlay.visible ||
+      deleteOverlay.visible;
+
+    tooSmallOverlay.visible = tooSmall;
+    header.visible = !tooSmall;
+    main.visible = !tooSmall;
+    footerStack.visible = !tooSmall;
+    overlayBg.visible = !tooSmall && modalVisible;
+    tooSmallOverlay.backgroundColor = palette.bg;
+    tooSmallCard.backgroundColor = palette.panel;
+    tooSmallTitle.fg = palette.active;
+    tooSmallCurrentLabel.fg = palette.muted;
+    tooSmallCurrentWidthLabel.fg = palette.muted;
+    tooSmallCurrentWidthValue.content = String(renderer.width);
+    tooSmallCurrentWidthValue.fg = renderer.width >= MIN_APP_WIDTH ? palette.green : palette.red;
+    tooSmallCurrentHeightLabel.fg = palette.muted;
+    tooSmallCurrentHeightValue.content = String(renderer.height);
+    tooSmallCurrentHeightValue.fg = renderer.height >= minHeight ? palette.green : palette.red;
+    tooSmallRequiredLabel.fg = palette.muted;
+    tooSmallRequiredWidthLabel.fg = palette.muted;
+    tooSmallRequiredWidthValue.content = String(MIN_APP_WIDTH);
+    tooSmallRequiredWidthValue.fg = palette.green;
+    tooSmallRequiredHeightLabel.fg = palette.muted;
+    tooSmallRequiredHeightValue.content = String(minHeight);
+    tooSmallRequiredHeightValue.fg = palette.green;
+
+    return tooSmall;
+  };
 
   const syncRows = (
     box: ScrollBoxRenderable,
@@ -904,6 +1176,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       const line = new TextRenderable(renderer, {
         id: `${idPrefix}-${nextRows.length}`,
         content: "",
+        width: "100%",
         fg: palette.muted,
         wrapMode: "none",
         truncate: true,
@@ -922,10 +1195,74 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     return nextRows;
   };
 
+  const syncLogRows = (desired: number): LogRowRenderable[] => {
+    const nextRows = [...logLines];
+
+    while (nextRows.length < desired) {
+      const index = nextRows.length;
+      const box = new BoxRenderable(renderer, {
+        id: `log-row-${index}`,
+        width: "100%",
+        flexDirection: "row",
+        alignItems: "center",
+        columnGap: LOG_ROW_GAP_X,
+        backgroundColor: panelBackgroundColor("logs"),
+      });
+
+      const timestamp = new TextRenderable(renderer, {
+        id: `log-row-ts-${index}`,
+        width: LOG_TIMESTAMP_WIDTH,
+        fg: palette.muted,
+        wrapMode: "none",
+        truncate: true,
+      });
+
+      const stream = new TextRenderable(renderer, {
+        id: `log-row-stream-${index}`,
+        width: LOG_STREAM_WIDTH,
+        attributes: TextAttributes.BOLD,
+        wrapMode: "none",
+        truncate: true,
+      });
+
+      const message = new TextRenderable(renderer, {
+        id: `log-row-message-${index}`,
+        flexGrow: 1,
+        minWidth: 0,
+        fg: palette.active,
+        wrapMode: "none",
+        truncate: true,
+      });
+
+      const meta = new TextRenderable(renderer, {
+        id: `log-row-meta-${index}`,
+        fg: palette.muted,
+        wrapMode: "none",
+        truncate: true,
+      });
+
+      box.add(timestamp);
+      box.add(stream);
+      box.add(message);
+      box.add(meta);
+      logList.add(box);
+      nextRows.push({ box, timestamp, stream, message, meta });
+    }
+
+    while (nextRows.length > desired) {
+      const row = nextRows.pop();
+      if (!row) break;
+      logList.remove(row.box.id);
+      row.box.destroy();
+    }
+
+    return nextRows;
+  };
+
   const applyAddFocusStyles = () => {
-    addNameField.borderColor = addFocusField === "name" ? palette.borderActive : palette.border;
-    addCommandField.borderColor =
-      addFocusField === "command" ? palette.borderActive : palette.border;
+    addNameField.backgroundColor = addFocusField === "name" ? palette.inputFocus : palette.input;
+    addCommandField.backgroundColor =
+      addFocusField === "command" ? palette.inputFocus : palette.input;
   };
 
   const clearDiscoverySelectionLines = () => {
@@ -1037,6 +1374,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       if (!line) return;
       line.content = formatManifestLine(view, selected, rowWidth);
       line.fg = selected ? palette.active : stateColor(view.state, palette);
+      line.bg = selected ? listSelectionBackground() : panelBackgroundColor("manifest");
     });
 
     manifestPanelMeta.content = `${views.filter((view) => view.state === "RUNNING").length}/${views.length} running`;
@@ -1059,6 +1397,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       if (!line) return;
       line.content = formatDockerLine(service, selected, rowWidth);
       line.fg = selected ? palette.active : dockerStateColor(service.state, palette);
+      line.bg = selected ? listSelectionBackground() : panelBackgroundColor("docker");
     });
 
     dockerPanelMeta.content = `${services.filter((service) => service.state === "running").length}/${
@@ -1086,50 +1425,84 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     }
 
     const switchedTarget = selectedIndex !== lastSelectedIndex || source !== lastLogSource;
-    const pinnedBottom = logCode.maxScrollY - logCode.scrollY <= 1;
+    const pinnedBottom = getScrollBoxMaxTop(logList) - logList.scrollTop <= 1;
+    const previousScrollTop = logList.scrollTop;
 
     lastLogVersion = version;
     lastSelectedIndex = selectedIndex;
     lastLogSource = source;
 
-    logCode.content = buffer ? buffer.getFullText() : "";
+    const entries = buffer?.all() ?? [];
+    logLines = syncLogRows(entries.length);
+
+    const viewportWidth = Math.floor(logList.viewport.width);
+    const rowWidth = Math.max(24, viewportWidth > 0 ? viewportWidth - 1 : 64);
+
+    entries.forEach((entry, index) => {
+      const row = logLines[index];
+      if (!row) return;
+
+      const metaBase = `#${index + 1}`;
+      const reservedWidth =
+        LOG_TIMESTAMP_WIDTH + LOG_STREAM_WIDTH + metaBase.length + LOG_ROW_GAP_X * 3;
+      const messageWidth = Math.max(LOG_MIN_MESSAGE_WIDTH, rowWidth - reservedWidth);
+      const truncated = truncateLogMessage(entry.line, messageWidth);
+      const metaText = truncated.hidden > 0 ? `${metaBase} +${truncated.hidden} cols` : metaBase;
+
+      row.box.backgroundColor = panelBackgroundColor("logs");
+      row.timestamp.content = formatLogTimestamp(entry.timestamp);
+      row.timestamp.fg = palette.muted;
+      row.stream.content = formatLogStream(entry.stream);
+      row.stream.fg = entry.stream === "stderr" ? palette.red : palette.secondary;
+      row.message.content = truncated.text;
+      row.message.fg = entry.stream === "stderr" ? palette.red : palette.active;
+      row.meta.content = metaText;
+      row.meta.fg = truncated.hidden > 0 ? palette.amber : palette.muted;
+    });
+
     if (switchedTarget || logsFollowTail || pinnedBottom) {
-      logCode.scrollY = logCode.maxScrollY;
+      logList.scrollTop = getScrollBoxMaxTop(logList);
+    } else {
+      logList.scrollTop = Math.min(previousScrollTop, getScrollBoxMaxTop(logList));
     }
+
+    const visibleStart = entries.length === 0 ? 0 : Math.min(entries.length, logList.scrollTop + 1);
+    const visibleEnd =
+      entries.length === 0
+        ? 0
+        : Math.min(
+            entries.length,
+            visibleStart + Math.max(0, Math.floor(logList.viewport.height) - 1),
+          );
+    const maxTop = getScrollBoxMaxTop(logList);
+    const scroll = maxTop === 0 ? 100 : Math.round((logList.scrollTop / maxTop) * 100);
 
     if (source === "docker") {
       const selected = dockerManager?.getSelectedService();
-      const scroll =
-        logCode.maxScrollY === 0 ? 100 : Math.round((logCode.scrollY / logCode.maxScrollY) * 100);
-      logPanelMeta.content = `${selected?.name ?? "docker"}  lines:${buffer?.size() ?? 0}  ${logsFollowTail ? "tail:on" : "tail:off"}  scroll:${scroll}%`;
+      logPanelMeta.content = `${selected?.name ?? "docker"}  lines:${entries.length}  show:${visibleStart}-${visibleEnd}  ${logsFollowTail ? "tail:on" : "tail:off"}  scroll:${scroll}%`;
       return;
     }
 
     const selected = manager.getSelectedView();
-    const scroll =
-      logCode.maxScrollY === 0 ? 100 : Math.round((logCode.scrollY / logCode.maxScrollY) * 100);
-    logPanelMeta.content = `${selected?.name ?? "service"}  lines:${buffer?.size() ?? 0}  ${logsFollowTail ? "tail:on" : "tail:off"}  scroll:${scroll}%`;
+    logPanelMeta.content = `${selected?.name ?? "service"}  lines:${entries.length}  show:${visibleStart}-${visibleEnd}  ${logsFollowTail ? "tail:on" : "tail:off"}  scroll:${scroll}%`;
   };
 
   const updatePanelStyles = () => {
-    const manifestActive = focusManager.isPanelActive("manifest");
-    manifestPanelTitle.content = `${manifestActive ? "*" : "o"} Manifest`;
+    manifestPanelTitle.content = "Manifest";
     manifestPanelTitle.fg = panelTitleColor("manifest");
-    manifestPanel.borderColor = manifestActive ? palette.borderActive : palette.border;
-    manifestPanel.borderStyle = manifestActive ? "double" : "single";
+    manifestPanel.backgroundColor = panelBackgroundColor("manifest");
 
-    const logActive = focusManager.isPanelActive("logs");
-    logPanelTitle.content = `${logActive ? "*" : "o"} Logs`;
+    logPanelTitle.content = "Logs";
     logPanelTitle.fg = panelTitleColor("logs");
-    logPanel.borderColor = logActive ? palette.borderActive : palette.border;
-    logPanel.borderStyle = logActive ? "double" : "single";
+    logPanel.backgroundColor = panelBackgroundColor("logs");
+    for (const row of logLines) {
+      row.box.backgroundColor = panelBackgroundColor("logs");
+    }
 
     if (dockerPanel && dockerPanelTitle) {
-      const dockerActive = focusManager.isPanelActive("docker");
-      dockerPanelTitle.content = `${dockerActive ? "*" : "o"} Docker`;
+      dockerPanelTitle.content = "Docker";
       dockerPanelTitle.fg = panelTitleColor("docker");
-      dockerPanel.borderColor = dockerActive ? palette.borderActive : palette.border;
-      dockerPanel.borderStyle = dockerActive ? "double" : "single";
+      dockerPanel.backgroundColor = panelBackgroundColor("docker");
     }
   };
 
@@ -1153,14 +1526,33 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   };
 
   const applyLayout = () => {
-    const stacked = renderer.width < 112;
-    main.flexDirection = stacked ? "column" : "row";
+    updateTooSmallState();
 
-    if (stacked) {
+    const stacked = renderer.width < 112;
+    const sideWidth = hasDocker
+      ? clamp(Math.floor(renderer.width * 0.34), 36, 52)
+      : clamp(Math.floor(renderer.width * 0.38), 34, 58);
+    const nextLogsPanelVisible =
+      (stacked
+        ? renderer.width - APP_INSET_X * 2
+        : renderer.width - APP_INSET_X * 2 - sideWidth - PANEL_GAP_X) >= MIN_LOG_PANEL_WIDTH;
+
+    logsPanelVisible = nextLogsPanelVisible;
+    main.flexDirection = stacked || !logsPanelVisible ? "column" : "row";
+    logPanel.visible = logsPanelVisible;
+
+    if (!logsPanelVisible && focusManager.getActivePanel() === "logs") {
+      focusManager.setActivePanel("manifest");
+    }
+
+    if (stacked || !logsPanelVisible) {
       sideColumn.width = "100%";
-      sideColumn.height = hasDocker
-        ? Math.max(12, Math.floor(renderer.height * 0.35))
-        : Math.max(10, Math.floor(renderer.height * 0.28));
+      sideColumn.height = logsPanelVisible
+        ? hasDocker
+          ? Math.max(12, Math.floor(renderer.height * 0.35))
+          : Math.max(10, Math.floor(renderer.height * 0.28))
+        : "auto";
+      sideColumn.flexGrow = logsPanelVisible ? 0 : 1;
       manifestPanel.flexGrow = 1;
 
       if (dockerPanel) {
@@ -1169,12 +1561,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
       logPanel.flexGrow = 1;
     } else {
-      const sideWidth = hasDocker
-        ? clamp(Math.floor(renderer.width * 0.34), 36, 52)
-        : clamp(Math.floor(renderer.width * 0.38), 34, 58);
-
       sideColumn.width = sideWidth;
       sideColumn.height = "auto";
+      sideColumn.flexGrow = 0;
       manifestPanel.flexGrow = hasDocker ? 2 : 1;
 
       if (dockerPanel) {
@@ -1196,18 +1585,17 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   const applyTheme = () => {
     palette = getTheme(renderer.themeMode);
+    updateTooSmallState();
 
     root.backgroundColor = palette.bg;
 
     header.backgroundColor = palette.panel;
-    header.borderColor = palette.border;
     headerTitle.fg = palette.active;
     headerPath.fg = palette.muted;
     headerVersion.fg = palette.active;
     headerStatus.fg = palette.muted;
 
-    manifestPanel.backgroundColor = palette.panel;
-    manifestPanel.borderColor = palette.border;
+    manifestPanel.backgroundColor = panelBackgroundColor("manifest");
     manifestPanelMeta.fg = palette.muted;
     manifestList.verticalScrollbarOptions = {
       trackOptions: {
@@ -1217,8 +1605,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     };
 
     if (dockerPanel && dockerPanelMeta && dockerList) {
-      dockerPanel.backgroundColor = palette.panel;
-      dockerPanel.borderColor = palette.border;
+      dockerPanel.backgroundColor = panelBackgroundColor("docker");
       dockerPanelMeta.fg = palette.muted;
       dockerList.verticalScrollbarOptions = {
         trackOptions: {
@@ -1228,20 +1615,21 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       };
     }
 
-    logPanel.backgroundColor = palette.panel;
-    logPanel.borderColor = palette.border;
+    logPanel.backgroundColor = panelBackgroundColor("logs");
     logPanelMeta.fg = palette.muted;
-    logCode.fg = palette.active;
-    logCode.bg = palette.panel;
+    logList.verticalScrollbarOptions = {
+      trackOptions: {
+        backgroundColor: palette.element,
+        foregroundColor: palette.border,
+      },
+    };
 
-    footer.backgroundColor = palette.panel;
-    footer.borderColor = palette.border;
-    footerState.fg = palette.muted;
+    footerStatePanel.backgroundColor = palette.panel;
+    footerShortcutsPanel.backgroundColor = palette.panel;
 
     overlayBg.backgroundColor = palette.overlay;
 
     editOverlay.backgroundColor = palette.modal;
-    editOverlay.borderColor = palette.borderActive;
     editTitle.fg = palette.accent;
     editError.fg = palette.red;
     editTextarea.backgroundColor = palette.input;
@@ -1249,7 +1637,6 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     editTextarea.focusedBackgroundColor = palette.inputFocus;
 
     addOverlay.backgroundColor = palette.modal;
-    addOverlay.borderColor = palette.borderActive;
     addTitle.fg = palette.accent;
     addNameLabel.fg = palette.muted;
     addCommandLabel.fg = palette.muted;
@@ -1265,7 +1652,6 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     applyAddFocusStyles();
 
     discoveryOverlay.backgroundColor = palette.modal;
-    discoveryOverlay.borderColor = palette.borderActive;
     discoveryTitle.fg = palette.accent;
     discoverySummary.fg = palette.muted;
     discoveryWarningTitle.fg = palette.amber;
@@ -1275,7 +1661,6 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     }
 
     deleteOverlay.backgroundColor = palette.modal;
-    deleteOverlay.borderColor = palette.red;
     deleteTitle.fg = palette.red;
     deleteMessage.fg = palette.active;
 
@@ -1303,8 +1688,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       deleteOverlay.visible = false;
       editError.content = "";
       editTextarea.initialValue = toml;
-      editTextarea.focus();
       renderer.requestRender();
+      focusWhenVisible(editOverlay, () => editTextarea.focus());
     },
 
     hideEditOverlay() {
@@ -1339,10 +1724,11 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       addFocusField = "name";
       addNameInput.value = "";
       addCommandInput.value = "";
-      addNameInput.focus();
+      addNameInput.blur();
       addCommandInput.blur();
       applyAddFocusStyles();
       renderer.requestRender();
+      focusWhenVisible(addOverlay, () => addNameInput.focus());
     },
 
     hideAddOverlay() {
@@ -1450,34 +1836,34 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     renderAll,
 
     scrollLogs(delta: number) {
-      const next = Math.max(0, Math.min(logCode.scrollY + delta, logCode.maxScrollY));
-      logCode.scrollY = next;
-      logsFollowTail = next >= logCode.maxScrollY;
+      const next = Math.max(0, Math.min(logList.scrollTop + delta, getScrollBoxMaxTop(logList)));
+      logList.scrollTop = next;
+      logsFollowTail = next >= getScrollBoxMaxTop(logList);
       renderer.requestRender();
       rebuildFooter();
     },
 
     scrollLogsPage(deltaPages: number) {
-      const pageSize = Math.max(1, Math.floor(logCode.height) - 1);
+      const pageSize = Math.max(1, Math.floor(logList.viewport.height) - 1);
       const next = Math.max(
         0,
-        Math.min(logCode.scrollY + pageSize * deltaPages, logCode.maxScrollY),
+        Math.min(logList.scrollTop + pageSize * deltaPages, getScrollBoxMaxTop(logList)),
       );
-      logCode.scrollY = next;
-      logsFollowTail = next >= logCode.maxScrollY;
+      logList.scrollTop = next;
+      logsFollowTail = next >= getScrollBoxMaxTop(logList);
       renderer.requestRender();
       rebuildFooter();
     },
 
     scrollLogsToTop() {
-      logCode.scrollY = 0;
+      logList.scrollTop = 0;
       logsFollowTail = false;
       renderer.requestRender();
       rebuildFooter();
     },
 
     scrollLogsToBottom() {
-      logCode.scrollY = logCode.maxScrollY;
+      logList.scrollTop = getScrollBoxMaxTop(logList);
       logsFollowTail = true;
       renderer.requestRender();
       rebuildFooter();
@@ -1486,7 +1872,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     toggleLogsFollowTail() {
       logsFollowTail = !logsFollowTail;
       if (logsFollowTail) {
-        logCode.scrollY = logCode.maxScrollY;
+        logList.scrollTop = getScrollBoxMaxTop(logList);
       }
       renderAll();
       return logsFollowTail;
@@ -1495,7 +1881,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     setLogsFollowTail(enabled: boolean) {
       logsFollowTail = enabled;
       if (logsFollowTail) {
-        logCode.scrollY = logCode.maxScrollY;
+        logList.scrollTop = getScrollBoxMaxTop(logList);
       }
       renderAll();
     },
@@ -1532,7 +1918,6 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     unsubFocus();
     unsubDocker();
     unsubDiscoverySelection?.();
-    logStyle.destroy();
     root.destroy();
   };
 
@@ -1560,11 +1945,20 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
     width: "100%",
     height: "100%",
     flexDirection: "column",
-    gap: 1,
+    paddingTop: APP_INSET_Y,
+    paddingBottom: APP_INSET_Y,
+    paddingLeft: APP_INSET_X,
+    paddingRight: APP_INSET_X,
+    rowGap: PANEL_GAP_Y,
   });
 
   const header = new BoxRenderable(renderer, {
-    padding: 1,
+    width: "100%",
+    backgroundColor: palette.panel,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
     alignItems: "center",
   });
 
@@ -1581,7 +1975,7 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
   });
 
   const versionPill = new BoxRenderable(renderer, {
-    paddingX: 1,
+    paddingX: INPUT_PADDING_X,
     alignItems: "center",
   });
 
@@ -1598,7 +1992,6 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
 
   const main = new BoxRenderable(renderer, {
     flexGrow: 1,
-    padding: 1,
     flexDirection: "column",
     justifyContent: "center",
     alignItems: "center",
@@ -1607,9 +2000,12 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
   const card = new BoxRenderable(renderer, {
     width: 86,
     backgroundColor: palette.panel,
-    padding: 2,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
     flexDirection: "column",
-    gap: 1,
+    rowGap: PANEL_CONTENT_GAP_Y,
   });
 
   const cardTitle = new TextRenderable(renderer, {
@@ -1632,7 +2028,7 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
 
   const selectionContainer = new BoxRenderable(renderer, {
     flexDirection: "column",
-    gap: 0,
+    gap: COMPACT_GAP,
   });
   card.add(selectionContainer);
 
@@ -1644,7 +2040,7 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
 
   const warningContainer = new BoxRenderable(renderer, {
     flexDirection: "column",
-    gap: 0,
+    gap: COMPACT_GAP,
   });
   card.add(warningContainer);
 
@@ -1657,13 +2053,18 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
   main.add(card);
 
   const footer = new BoxRenderable(renderer, {
-    padding: 1,
+    width: "100%",
+    backgroundColor: palette.panel,
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
     alignItems: "center",
     justifyContent: "center",
   });
 
   const footerPill = new BoxRenderable(renderer, {
-    paddingX: 1,
+    paddingX: INPUT_PADDING_X,
     alignItems: "center",
     width: "100%",
   });
@@ -1671,7 +2072,8 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
   const footerRow = new BoxRenderable(renderer, {
     width: "100%",
     flexDirection: "row",
-    gap: 2,
+    columnGap: INLINE_GAP_X,
+    rowGap: INLINE_GAP_Y,
     flexWrap: "wrap",
     justifyContent: "center",
     alignItems: "center",
@@ -1792,9 +2194,11 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
 
   const applyTheme = () => {
     palette = getTheme(renderer.themeMode);
+    header.backgroundColor = palette.panel;
     title.fg = palette.muted;
     versionText.fg = palette.active;
     card.backgroundColor = palette.panel;
+    footer.backgroundColor = palette.panel;
     cardTitle.fg = palette.muted;
     noManifest.fg = palette.active;
     detectedSummary.fg = palette.muted;

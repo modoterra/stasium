@@ -15,7 +15,6 @@ const MANIFEST_SHORTCUTS: Shortcut[] = [
 
 const LOGS_SHORTCUTS: Shortcut[] = [
   { key: "up/down", label: "scroll" },
-  { key: "pgup/pgdn", label: "page" },
   { key: "f", label: "follow" },
   { key: "g", label: "top" },
   { key: "G", label: "bottom" },
@@ -50,6 +49,8 @@ const DISCOVERING_SHORTCUTS: Shortcut[] = [
 ];
 
 const GLOBAL_SHORTCUTS: Shortcut[] = [
+  { key: "pgup/pgdn", label: "log page" },
+  { key: "home/end", label: "log jump" },
   { key: "tab", label: "switch panel" },
   { key: "q", label: "quit" },
 ];
