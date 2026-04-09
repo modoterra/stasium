@@ -244,6 +244,8 @@ export class DockerManager {
         }
       }
 
+      const previousName = this.getSelectedService()?.name ?? null;
+
       this.services = serviceNames.map((name) => {
         const list = entriesByService.get(name) ?? [];
         if (list.length === 0) {
@@ -266,6 +268,11 @@ export class DockerManager {
           ports: representative?.Ports ?? "",
         };
       });
+
+      if (previousName !== null) {
+        const restoredIndex = this.services.findIndex((s) => s.name === previousName);
+        this.selectedIndex = restoredIndex >= 0 ? restoredIndex : 0;
+      }
 
       const maxIndex = Math.max(0, this.services.length - 1);
       if (this.selectedIndex > maxIndex) {

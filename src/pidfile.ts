@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { realpathSync } from "node:fs";
-import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
+import { realpathSync, writeFileSync } from "node:fs";
+import { mkdir, readFile, readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
 import type { ServicePid } from "./types";
@@ -52,19 +52,28 @@ const waitForPidExit = async (pid: number, timeoutMs: number): Promise<boolean> 
   return !isProcessAlive(pid);
 };
 
+const SHOULD_SIGNAL_PROCESS_GROUP = process.platform !== "win32";
+
+const trySignalOne = (target: number, signal: NodeJS.Signals): boolean => {
+  try {
+    process.kill(target, signal);
+    return true;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException | undefined)?.code;
+    return code === "ESRCH";
+  }
+};
+
 const trySignal = async (
   pid: number,
   signal: NodeJS.Signals,
   timeoutMs: number,
 ): Promise<boolean> => {
   if (!isProcessAlive(pid)) return true;
-  try {
-    process.kill(pid, signal);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException | undefined)?.code;
-    if (code === "ESRCH") return true;
-    return false;
+  if (SHOULD_SIGNAL_PROCESS_GROUP) {
+    trySignalOne(-pid, signal);
   }
+  if (!trySignalOne(pid, signal)) return false;
   return waitForPidExit(pid, timeoutMs);
 };
 
@@ -226,7 +235,7 @@ export const syncPidFiles = async (
       await delay(WRITE_DELAY_MS);
       continue;
     }
-    await writeFile(path, `${pid}`);
+    writeFileSync(path, `${pid}`);
   }
 };
 

@@ -283,6 +283,7 @@ export interface UiControls {
   toggleLogsFollowTail: () => boolean;
   setLogsFollowTail: (enabled: boolean) => void;
   clearLogs: () => void;
+  isLogsPanelVisible: () => boolean;
 }
 
 export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiControls } => {
@@ -1908,6 +1909,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
         lastLogSource = source;
         renderAll();
       }
+    },
+
+    isLogsPanelVisible() {
+      return logsPanelVisible;
     },
   };
 

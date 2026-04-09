@@ -75,7 +75,7 @@ export class FocusManager {
   private readonly updateCallbacks: Set<FocusUpdateCallback> = new Set();
 
   constructor(hasDocker: boolean) {
-    this.panels = hasDocker ? ["manifest", "logs", "docker"] : ["manifest", "logs"];
+    this.panels = hasDocker ? ["manifest", "docker", "logs"] : ["manifest", "logs"];
     this.activePanel = "manifest";
   }
 
