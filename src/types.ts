@@ -13,7 +13,16 @@ export interface ServiceConfig {
   depends_on?: string[];
 }
 
+export interface AppDockerConfig {
+  enabled?: boolean;
+}
+
+export interface AppConfig {
+  docker?: AppDockerConfig;
+}
+
 export interface Manifest {
+  app?: AppConfig;
   services: ServiceConfig[];
   path: string;
 }

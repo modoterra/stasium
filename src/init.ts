@@ -8,7 +8,7 @@ import {
 import type { DetectResult as DiscoveryDetectResult } from "./discovery";
 import { saveManifest } from "./manifest";
 import { formatCommandSpec } from "./shared";
-import type { ServiceConfig } from "./types";
+import type { AppConfig, ServiceConfig } from "./types";
 
 export type DetectResult = DiscoveryDetectResult;
 
@@ -34,8 +34,9 @@ export const getDefaultServices = (
 export const writeManifest = async (
   manifestPath: string,
   services: ServiceConfig[],
+  app?: AppConfig,
 ): Promise<void> => {
-  await saveManifest(manifestPath, services);
+  await saveManifest(manifestPath, services, app);
 };
 
 export const formatServiceSummary = (service: ServiceConfig): string =>

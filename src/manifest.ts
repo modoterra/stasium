@@ -1,9 +1,14 @@
 import { resolve } from "node:path";
 import { ServiceGraphError, validateServiceGraph } from "./service-graph";
 import { getErrorMessage } from "./shared";
-import type { Manifest, ServiceConfig } from "./types";
+import type { AppConfig, AppDockerConfig, Manifest, ServiceConfig } from "./types";
 
 type RawManifest = {
+  app?: {
+    docker?: {
+      enabled?: boolean;
+    };
+  };
   service?: ServiceConfig[];
 };
 
@@ -26,6 +31,8 @@ const validServiceKeys = new Set([
 ]);
 
 const validRestartPolicies = new Set(["never", "on-failure", "always"]);
+const validAppKeys = new Set(["docker"]);
+const validDockerKeys = new Set(["enabled"]);
 
 const normalizeEnv = (env: unknown): Record<string, string> | undefined => {
   if (env === undefined) return undefined;
@@ -51,6 +58,43 @@ const normalizeEnv = (env: unknown): Record<string, string> | undefined => {
     throw new ManifestError(`service.env.${key} must be string | number | boolean`);
   }
   return normalized;
+};
+
+const normalizeDockerConfig = (docker: unknown): AppDockerConfig | undefined => {
+  if (docker === undefined) return undefined;
+  if (docker === null || typeof docker !== "object" || Array.isArray(docker)) {
+    throw new ManifestError("app.docker must be a table");
+  }
+
+  const unknownKeys = Object.keys(docker).filter((key) => !validDockerKeys.has(key));
+  if (unknownKeys.length > 0) {
+    throw new ManifestError(`app.docker has unknown keys: ${unknownKeys.join(", ")}`);
+  }
+
+  const enabled = (docker as { enabled?: unknown }).enabled;
+  if (enabled !== undefined && typeof enabled !== "boolean") {
+    throw new ManifestError("app.docker.enabled must be a boolean");
+  }
+
+  if (enabled === undefined) return undefined;
+  return { enabled };
+};
+
+const normalizeApp = (app: unknown): AppConfig | undefined => {
+  if (app === undefined) return undefined;
+  if (app === null || typeof app !== "object" || Array.isArray(app)) {
+    throw new ManifestError("app must be a table");
+  }
+
+  const unknownKeys = Object.keys(app).filter((key) => !validAppKeys.has(key));
+  if (unknownKeys.length > 0) {
+    throw new ManifestError(`app has unknown keys: ${unknownKeys.join(", ")}`);
+  }
+
+  const docker = normalizeDockerConfig((app as { docker?: unknown }).docker);
+  if (!docker) return undefined;
+
+  return { docker };
 };
 
 const normalizeService = (raw: ServiceConfig, index: number): ServiceConfig => {
@@ -125,6 +169,7 @@ export const loadManifest = async (path?: string): Promise<Manifest> => {
     throw new ManifestError("service must be an array of tables");
   }
 
+  const app = normalizeApp(parsed.app);
   const normalized = services.map((service, index) => normalizeService(service, index));
 
   try {
@@ -137,12 +182,19 @@ export const loadManifest = async (path?: string): Promise<Manifest> => {
   }
 
   return {
+    app,
     services: normalized,
     path: resolve(manifestPath),
   };
 };
 
 const escapeToml = (value: string): string => value.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+
+const renderAppToml = (app?: AppConfig): string[] => {
+  if (app?.docker?.enabled === undefined) return [];
+
+  return ["[app.docker]", `enabled = ${app.docker.enabled ? "true" : "false"}`];
+};
 
 const renderServiceToml = (service: ServiceConfig): string => {
   const lines: string[] = [];
@@ -171,10 +223,16 @@ const renderServiceToml = (service: ServiceConfig): string => {
   return lines.join("\n");
 };
 
-export const renderManifest = (services: ServiceConfig[]): string => {
+export const renderManifest = (services: ServiceConfig[], app?: AppConfig): string => {
   const lines: string[] = [];
   lines.push("# stasium.toml");
   lines.push("");
+
+  const appLines = renderAppToml(app);
+  if (appLines.length > 0) {
+    lines.push(...appLines);
+    lines.push("");
+  }
 
   if (services.length === 0) {
     lines.push("# No services configured. Add [[service]] blocks below.");
@@ -220,7 +278,11 @@ export const parseServiceBlock = (toml: string): ServiceConfig => {
   return normalizeService(raw, 0);
 };
 
-export const saveManifest = async (path: string, services: ServiceConfig[]): Promise<void> => {
-  const contents = renderManifest(services);
+export const saveManifest = async (
+  path: string,
+  services: ServiceConfig[],
+  app?: AppConfig,
+): Promise<void> => {
+  const contents = renderManifest(services, app);
   await Bun.write(path, contents);
 };
