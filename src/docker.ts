@@ -87,6 +87,21 @@ const parseDockerState = (state: string): DockerServiceState => {
   return "unknown";
 };
 
+export const getStableDockerServiceNames = (
+  configServices: string[],
+  discoveredServices: string[],
+): string[] => {
+  const names = configServices.length > 0 ? [...configServices] : [...discoveredServices];
+
+  if (configServices.length > 0) {
+    for (const name of discoveredServices) {
+      if (!names.includes(name)) names.push(name);
+    }
+  }
+
+  return names.sort((left, right) => left.localeCompare(right));
+};
+
 const pickAggregateState = (entries: DockerPsEntry[]): DockerServiceState => {
   const states = entries.map((entry) => parseDockerState(entry.State ?? "unknown"));
   const priority: DockerServiceState[] = [
@@ -162,8 +177,15 @@ export class DockerManager {
   }
 
   moveSelection(delta: number): void {
-    this.setSelectedIndex(this.selectedIndex + delta);
-    this.streamSelectedLogs();
+    this.selectIndex(this.selectedIndex + delta);
+  }
+
+  selectIndex(index: number): void {
+    this.setSelectedIndex(index);
+    const selectedName = this.getSelectedService()?.name ?? null;
+    if (selectedName && selectedName !== this.activeLogService) {
+      this.streamSelectedLogs();
+    }
   }
 
   getSelectedService(): DockerService | null {
@@ -237,12 +259,7 @@ export class DockerManager {
         }
       }
 
-      const serviceNames = configServices.length > 0 ? [...configServices] : [...entryOrder];
-      if (configServices.length > 0) {
-        for (const name of entryOrder) {
-          if (!serviceNames.includes(name)) serviceNames.push(name);
-        }
-      }
+      const serviceNames = getStableDockerServiceNames(configServices, entryOrder);
 
       const previousName = this.getSelectedService()?.name ?? null;
 

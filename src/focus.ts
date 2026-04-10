@@ -14,7 +14,7 @@ const MANIFEST_SHORTCUTS: Shortcut[] = [
 ];
 
 const LOGS_SHORTCUTS: Shortcut[] = [
-  { key: "up/down", label: "scroll" },
+  { key: "up/down", label: "select" },
   { key: "f", label: "follow" },
   { key: "g", label: "top" },
   { key: "G", label: "bottom" },
@@ -51,6 +51,10 @@ const DISCOVERING_SHORTCUTS: Shortcut[] = [
 const GLOBAL_SHORTCUTS: Shortcut[] = [
   { key: "pgup/pgdn", label: "log page" },
   { key: "home/end", label: "log jump" },
+  { key: "1", label: "manifest panel" },
+  { key: "2", label: "docker panel" },
+  { key: "3", label: "logs panel" },
+  { key: "4", label: "all panels" },
   { key: "tab", label: "switch panel" },
   { key: "q", label: "quit" },
 ];
@@ -70,12 +74,14 @@ const MODE_SHORTCUTS: Record<AppMode, Shortcut[] | null> = {
 
 export class FocusManager {
   private activePanel: PanelId;
-  private panels: PanelId[];
+  private readonly panels: PanelId[];
+  private visiblePanels: PanelId[];
   private mode: AppMode = "normal";
   private readonly updateCallbacks: Set<FocusUpdateCallback> = new Set();
 
   constructor(hasDocker: boolean) {
     this.panels = hasDocker ? ["manifest", "docker", "logs"] : ["manifest", "logs"];
+    this.visiblePanels = [...this.panels];
     this.activePanel = "manifest";
   }
 
@@ -90,7 +96,7 @@ export class FocusManager {
 
   setActivePanel(panel: PanelId): void {
     if (this.mode !== "normal") return;
-    if (!this.panels.includes(panel)) return;
+    if (!this.visiblePanels.includes(panel)) return;
     if (panel === this.activePanel) return;
     this.activePanel = panel;
     this.notify();
@@ -98,10 +104,48 @@ export class FocusManager {
 
   cyclePanel(direction: 1 | -1 = 1): void {
     if (this.mode !== "normal") return;
-    const currentIndex = this.panels.indexOf(this.activePanel);
-    const nextIndex = (currentIndex + direction + this.panels.length) % this.panels.length;
-    this.activePanel = this.panels[nextIndex] ?? this.panels[0] ?? "manifest";
+    const currentIndex = this.visiblePanels.indexOf(this.activePanel);
+    const nextIndex =
+      (currentIndex + direction + this.visiblePanels.length) % this.visiblePanels.length;
+    this.activePanel = this.visiblePanels[nextIndex] ?? this.visiblePanels[0] ?? "manifest";
     this.notify();
+  }
+
+  getVisiblePanels(): PanelId[] {
+    return [...this.visiblePanels];
+  }
+
+  isPanelVisible(panel: PanelId): boolean {
+    return this.visiblePanels.includes(panel);
+  }
+
+  togglePanel(panel: PanelId): void {
+    if (this.mode !== "normal") return;
+    if (!this.panels.includes(panel)) return;
+
+    if (this.visiblePanels.includes(panel)) {
+      if (this.visiblePanels.length === 1) return;
+      this.visiblePanels = this.visiblePanels.filter((visiblePanel) => visiblePanel !== panel);
+    } else {
+      const nextVisible = new Set([...this.visiblePanels, panel]);
+      this.visiblePanels = this.panels.filter((visiblePanel) => nextVisible.has(visiblePanel));
+    }
+
+    this.ensureActivePanelVisible(this.visiblePanels);
+    this.notify();
+  }
+
+  showAllPanels(): void {
+    if (this.mode !== "normal") return;
+    if (this.visiblePanels.length === this.panels.length) return;
+    this.visiblePanels = [...this.panels];
+    this.notify();
+  }
+
+  ensureActivePanelVisible(availablePanels: PanelId[]): void {
+    if (availablePanels.length === 0) return;
+    if (availablePanels.includes(this.activePanel)) return;
+    this.activePanel = availablePanels[0] ?? "manifest";
   }
 
   getMode(): AppMode {
@@ -118,7 +162,10 @@ export class FocusManager {
     const modeShortcuts = MODE_SHORTCUTS[this.mode];
     if (modeShortcuts) return modeShortcuts;
     const panelShortcuts = PANEL_SHORTCUTS[this.activePanel] ?? [];
-    return [...panelShortcuts, ...GLOBAL_SHORTCUTS];
+    const globalShortcuts = this.panels.includes("docker")
+      ? GLOBAL_SHORTCUTS
+      : GLOBAL_SHORTCUTS.filter((shortcut) => shortcut.label !== "docker panel");
+    return [...panelShortcuts, ...globalShortcuts];
   }
 
   isPanelActive(panel: PanelId): boolean {

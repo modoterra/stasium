@@ -21,6 +21,7 @@ interface Palette {
   panel: string;
   panelActive: string;
   selection: string;
+  hover: string;
   element: string;
   accent: string;
   secondary: string;
@@ -42,6 +43,7 @@ const dark: Palette = {
   panel: "#161616",
   panelActive: "#222222",
   selection: "#2c2c2c",
+  hover: "#262626",
   element: "#1d1d1d",
   accent: "#fab283",
   secondary: "#5c9cf5",
@@ -63,6 +65,7 @@ const light: Palette = {
   panel: "#ececec",
   panelActive: "#dfdfdf",
   selection: "#d4d4d4",
+  hover: "#dedede",
   element: "#e4e4e4",
   accent: "#3b7dd8",
   secondary: "#7b5bb6",
@@ -96,6 +99,7 @@ const LOG_ROW_GAP_X = 1;
 const LOG_TIMESTAMP_WIDTH = 8;
 const LOG_STREAM_WIDTH = 3;
 const LOG_MIN_MESSAGE_WIDTH = 4;
+const LOG_DETAIL_PADDING_LEFT = LOG_TIMESTAMP_WIDTH + LOG_STREAM_WIDTH + LOG_ROW_GAP_X * 2;
 const MIN_LOG_PANEL_WIDTH = 56;
 const MIN_APP_WIDTH = 80;
 const MIN_APP_HEIGHT_WITH_DOCKER = 35;
@@ -241,11 +245,14 @@ const truncateLogMessage = (value: string, max: number): { text: string; hidden:
 };
 
 interface LogRowRenderable {
+  entryKey: string | null;
   box: BoxRenderable;
+  summary: BoxRenderable;
   timestamp: TextRenderable;
   stream: TextRenderable;
   message: TextRenderable;
   meta: TextRenderable;
+  detail: TextRenderable;
 }
 
 export interface UiOptions {
@@ -257,6 +264,7 @@ export interface UiOptions {
 }
 
 export interface UiControls {
+  setShortcutHandler: (handler: ((shortcut: Shortcut) => void) | null) => void;
   showEditOverlay: (toml: string) => void;
   hideEditOverlay: () => void;
   getEditContent: () => string;
@@ -276,11 +284,13 @@ export interface UiControls {
   setDiscoveryError: (message: string) => void;
   clearDiscoveryError: () => void;
   renderAll: () => void;
+  moveLogSelection: (delta: number) => void;
   scrollLogs: (delta: number) => void;
   scrollLogsPage: (deltaPages: number) => void;
   scrollLogsToTop: () => void;
   scrollLogsToBottom: () => void;
   toggleLogsFollowTail: () => boolean;
+  getLogsFollowTail: () => boolean;
   setLogsFollowTail: (enabled: boolean) => void;
   clearLogs: () => void;
   isLogsPanelVisible: () => boolean;
@@ -355,15 +365,17 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     truncate: true,
   });
 
-  const headerStatus = new TextRenderable(renderer, {
-    content: "",
-    fg: palette.muted,
-    wrapMode: "none",
-    truncate: true,
+  const headerStatusRow = new BoxRenderable(renderer, {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    columnGap: INLINE_GAP_X,
+    rowGap: INLINE_GAP_Y,
+    flexWrap: "wrap",
   });
 
   headerRight.add(headerVersion);
-  headerRight.add(headerStatus);
+  headerRight.add(headerStatusRow);
 
   header.add(headerLeft);
   header.add(headerRight);
@@ -494,12 +506,20 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     flexGrow: 1,
     scrollY: true,
     scrollX: false,
+    rootOptions: {
+      backgroundColor: palette.panel,
+    },
+    wrapperOptions: {
+      backgroundColor: palette.panel,
+    },
     viewportOptions: {
       paddingRight: SCROLLBAR_PADDING_RIGHT,
+      backgroundColor: palette.panel,
     },
     contentOptions: {
       flexDirection: "column",
       gap: COMPACT_GAP,
+      backgroundColor: palette.panel,
     },
     verticalScrollbarOptions: {
       trackOptions: {
@@ -537,7 +557,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   const footerShortcutsPanel = new BoxRenderable(renderer, {
     flexShrink: 0,
     width: "100%",
-    backgroundColor: palette.panel,
+    backgroundColor: "transparent",
     paddingTop: PANEL_PADDING_Y,
     paddingBottom: PANEL_PADDING_Y,
     paddingLeft: PANEL_PADDING_X,
@@ -568,14 +588,21 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   footerStack.add(footerStatePanel);
   footerStack.add(footerShortcutsPanel);
 
+  let headerStatusItems: BoxRenderable[] = [];
   let footerStateItems: TextRenderable[] = [];
-  let footerItems: TextRenderable[] = [];
+  let footerShortcutItems: BoxRenderable[] = [];
+  let hoveredFooterShortcutIndex = -1;
+  let shortcutHandler: ((shortcut: Shortcut) => void) | null = null;
 
   const compactShortcutLabels: Record<string, string> = {
     "switch panel": "switch",
     "next field": "next",
     follow: "tail",
     discover: "scan",
+    "manifest panel": "manifest",
+    "docker panel": "docker",
+    "logs panel": "logs",
+    "all panels": "all",
   };
 
   const shortcutPriority: Record<string, number> = {
@@ -595,6 +622,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     toggle: 85,
     all: 75,
     none: 75,
+    "manifest panel": 60,
+    "docker panel": 60,
+    "logs panel": 60,
+    "all panels": 65,
     "switch panel": 95,
     quit: 100,
     confirm: 95,
@@ -610,7 +641,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     if (shortcuts.length === 0) return 0;
     return shortcuts.reduce((sum, shortcut) => {
       const label = shortcutLabel(shortcut, labelMode);
-      return sum + shortcut.key.length + label.length + 1;
+      return sum + shortcut.key.length + label.length + 6;
     }, 0);
   };
 
@@ -677,6 +708,130 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     }
   };
 
+  const formatVisiblePanels = (panels: PanelId[]): string => {
+    if (panels.length === 0) return "none";
+    if (
+      panels.length === focusManager.getVisiblePanels().length &&
+      panels.length === (hasDocker ? 3 : 2)
+    ) {
+      return "all";
+    }
+    return panels.map(panelName).join("+");
+  };
+
+  const getRenderedPanels = (): PanelId[] => {
+    const panels: PanelId[] = [];
+    if (manifestPanel.visible) panels.push("manifest");
+    if (dockerPanel?.visible) panels.push("docker");
+    if (logPanel.visible) panels.push("logs");
+    return panels;
+  };
+
+  const isPanelRendered = (panel: PanelId): boolean => getRenderedPanels().includes(panel);
+
+  const summaryColor = (active: number, total: number, failures = 0): string => {
+    if (failures > 0) return palette.red;
+    if (total === 0) return palette.muted;
+    if (active === total) return palette.green;
+    if (active > 0) return palette.amber;
+    return palette.muted;
+  };
+
+  const footerShortcutBackground = (hovered: boolean): string =>
+    hovered ? palette.hover : "transparent";
+
+  const clearHeaderStatus = () => {
+    for (const item of headerStatusItems) {
+      headerStatusRow.remove(item.id);
+      item.destroy();
+    }
+    headerStatusItems = [];
+  };
+
+  const buildHeaderStatus = (): Array<{ content: string; fg: string; panel?: PanelId }> => {
+    const views = manager.getViews();
+    const running = views.filter((view) => view.state === "RUNNING").length;
+    const failed = views.filter((view) => view.state === "FAILED").length;
+    const stopped = views.filter((view) => view.state === "STOPPED").length;
+    const segments: Array<{ content: string; fg: string; panel?: PanelId }> = [
+      {
+        content: `${running}/${views.length} svc`,
+        fg: summaryColor(running, views.length, failed),
+        panel: "manifest",
+      },
+    ];
+
+    if (hasDocker && dockerManager) {
+      const dockerServices = dockerManager.getServices();
+      const dockerRunning = dockerServices.filter((service) => service.state === "running").length;
+      const dockerStopped = dockerServices.filter(
+        (service) => service.state === "dead" || service.state === "exited",
+      ).length;
+
+      segments.push({
+        content: `${dockerRunning}/${dockerServices.length} docker`,
+        fg: summaryColor(dockerRunning, dockerServices.length, dockerStopped),
+        panel: "docker",
+      });
+
+      segments.push({
+        content: `${dockerStopped} stopped`,
+        fg: dockerStopped > 0 ? palette.red : palette.muted,
+        panel: "docker",
+      });
+
+      return segments;
+    }
+
+    segments.push({
+      content: `${stopped} stopped`,
+      fg: stopped > 0 ? palette.amber : palette.muted,
+      panel: "logs",
+    });
+
+    if (failed > 0) {
+      segments.push({
+        content: `${failed} failed`,
+        fg: palette.red,
+        panel: "logs",
+      });
+    }
+
+    return segments;
+  };
+
+  const rebuildHeaderStatus = () => {
+    clearHeaderStatus();
+
+    buildHeaderStatus().forEach((segment, index) => {
+      const box = new BoxRenderable(renderer, {
+        id: `header-status-${index}`,
+        flexDirection: "row",
+        alignItems: "center",
+        paddingX: INPUT_PADDING_X,
+        backgroundColor: "transparent",
+      });
+
+      const text = new TextRenderable(renderer, {
+        content: segment.content,
+        fg: segment.fg,
+        wrapMode: "none",
+        truncate: true,
+      });
+
+      box.onMouseDown = (event) => {
+        if (!segment.panel) return;
+        event.stopPropagation();
+        collapseExpandedLog();
+        activatePanel(segment.panel);
+      };
+
+      box.add(text);
+      headerStatusRow.add(box);
+      headerStatusItems.push(box);
+    });
+  };
+
   const buildFooterState = (): Array<{ content: string; fg: string }> => {
     const mode = focusManager.getMode();
     if (mode === "editing") {
@@ -707,6 +862,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     }
 
     const activePanel = focusManager.getActivePanel();
+    const visiblePanels = getRenderedPanels();
+    const requestedPanels = focusManager.getVisiblePanels();
     const selectedManifest = manager.getSelectedView();
     const selectedDocker = dockerManager?.getSelectedService() ?? null;
     const activeLogName =
@@ -717,7 +874,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const manifestState = selectedManifest?.state.toLowerCase() ?? "none";
     const dockerState = selectedDocker?.state ?? "none";
 
-    return [
+    const segments = [
+      { content: `layout:${formatVisiblePanels(visiblePanels)}`, fg: palette.secondary },
       { content: `panel:${panelName(activePanel)}`, fg: panelTitleColor(activePanel) },
       {
         content: `svc:${selectedManifest?.name ?? "-"} (${manifestState})`,
@@ -732,6 +890,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
         fg: logsPanelVisible ? (logsFollowTail ? palette.secondary : palette.muted) : palette.muted,
       },
     ];
+
+    if (requestedPanels.includes("logs") && !visiblePanels.includes("logs")) {
+      segments.push({ content: "logs:auto-hidden", fg: palette.amber });
+    }
+
+    return segments;
   };
 
   const rebuildFooter = () => {
@@ -741,11 +905,11 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     }
     footerStateItems = [];
 
-    for (const item of footerItems) {
+    for (const item of footerShortcutItems) {
       footerRow.remove(item.id);
       item.destroy();
     }
-    footerItems = [];
+    footerShortcutItems = [];
 
     buildFooterState().forEach((segment, index) => {
       const item = new TextRenderable(renderer, {
@@ -761,21 +925,52 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
     const { shortcuts, labelMode } = getFooterLayout();
     shortcuts.forEach((shortcut, index) => {
+      const box = new BoxRenderable(renderer, {
+        id: `footer-shortcut-${index}`,
+        flexDirection: "row",
+        alignItems: "center",
+        columnGap: 1,
+        paddingX: INPUT_PADDING_X,
+        backgroundColor: footerShortcutBackground(index === hoveredFooterShortcutIndex),
+      });
+
       const keyText = new TextRenderable(renderer, {
         id: `footer-key-${index}`,
         content: shortcut.key,
         fg: palette.secondary,
+        wrapMode: "none",
+        truncate: true,
       });
-      footerRow.add(keyText);
-      footerItems.push(keyText);
 
       const labelText = new TextRenderable(renderer, {
         id: `footer-label-${index}`,
         content: shortcutLabel(shortcut, labelMode),
-        fg: palette.muted,
+        fg: palette.active,
+        wrapMode: "none",
+        truncate: true,
       });
-      footerRow.add(labelText);
-      footerItems.push(labelText);
+
+      box.onMouseDown = (event) => {
+        event.stopPropagation();
+        if (!isMouseInteractive()) return;
+        collapseExpandedLog();
+        shortcutHandler?.(shortcut);
+      };
+      box.onMouseOver = () => {
+        if (hoveredFooterShortcutIndex === index) return;
+        hoveredFooterShortcutIndex = index;
+        renderAll();
+      };
+      box.onMouseOut = () => {
+        if (hoveredFooterShortcutIndex !== index) return;
+        hoveredFooterShortcutIndex = -1;
+        renderAll();
+      };
+
+      box.add(keyText);
+      box.add(labelText);
+      footerRow.add(box);
+      footerShortcutItems.push(box);
     });
   };
 
@@ -1107,6 +1302,11 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   let lastLogVersion = -1;
   let lastSelectedIndex = -1;
   let lastLogSource: "manifest" | "docker" = "manifest";
+  let hoveredLogEntryKey: string | null = null;
+  let selectedLogEntryKey: string | null = null;
+  let expandedLogEntryKey: string | null = null;
+  let hoveredManifestIndex = -1;
+  let hoveredDockerIndex = -1;
   let addFocusField: "name" | "command" = "name";
   let discoverySelection: DiscoverySelection | null = null;
   let discoveryWarnings: string[] = [];
@@ -1121,6 +1321,126 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     focusManager.isPanelActive(panel) ? palette.panelActive : palette.panel;
 
   const listSelectionBackground = (): string => palette.selection;
+
+  const listHoverBackground = (): string => palette.hover;
+
+  const invalidateLogs = (): void => {
+    lastLogVersion = -1;
+  };
+
+  const resetLogInteraction = (): void => {
+    hoveredLogEntryKey = null;
+    selectedLogEntryKey = null;
+    expandedLogEntryKey = null;
+    invalidateLogs();
+  };
+
+  const collapseExpandedLog = (): void => {
+    if (expandedLogEntryKey === null) return;
+    expandedLogEntryKey = null;
+    invalidateLogs();
+    renderAll();
+  };
+
+  const getLogEntryKey = (entry: LogEntry, index: number): string =>
+    `${entry.timestamp}:${entry.stream}:${index}:${entry.line}`;
+
+  const listRowBackground = (panel: PanelId, selected: boolean, hovered: boolean): string => {
+    if (selected) return listSelectionBackground();
+    if (hovered) return listHoverBackground();
+    return panelBackgroundColor(panel);
+  };
+
+  const logRowBackground = (key: string): string => {
+    if (selectedLogEntryKey === key) return listSelectionBackground();
+    if (hoveredLogEntryKey === key) return listHoverBackground();
+    return panelBackgroundColor("logs");
+  };
+
+  const isMouseInteractive = (): boolean =>
+    focusManager.getMode() === "normal" && !overlayBg.visible && !tooSmallOverlay.visible;
+
+  const activatePanel = (panel: PanelId): void => {
+    if (!isMouseInteractive()) return;
+    if (!isPanelRendered(panel)) return;
+    focusManager.setActivePanel(panel);
+  };
+
+  const setHoveredManifestRow = (index: number): void => {
+    if (hoveredManifestIndex === index) return;
+    hoveredManifestIndex = index;
+    renderAll();
+  };
+
+  const setHoveredDockerRow = (index: number): void => {
+    if (hoveredDockerIndex === index) return;
+    hoveredDockerIndex = index;
+    renderAll();
+  };
+
+  const setHoveredLogRow = (key: string | null): void => {
+    if (hoveredLogEntryKey === key) return;
+    hoveredLogEntryKey = key;
+    invalidateLogs();
+    renderAll();
+  };
+
+  const selectManifestRow = (index: number): void => {
+    if (!isMouseInteractive()) return;
+    activatePanel("manifest");
+    manager.setSelectedIndex(index);
+  };
+
+  const selectDockerRow = (index: number): void => {
+    if (!isMouseInteractive() || !dockerManager) return;
+    activatePanel("docker");
+    dockerManager.selectIndex(index);
+  };
+
+  const toggleLogRow = (entry: LogEntry, index: number): void => {
+    if (!isMouseInteractive()) return;
+
+    activatePanel("logs");
+    const key = getLogEntryKey(entry, index);
+    selectedLogEntryKey = key;
+    expandedLogEntryKey = expandedLogEntryKey === key ? null : key;
+    logsFollowTail = false;
+    invalidateLogs();
+    renderAll();
+  };
+
+  const getActiveLogEntries = (): LogEntry[] => {
+    const source = logSource === "docker" && dockerManager ? "docker" : "manifest";
+    const buffer =
+      source === "docker"
+        ? (dockerManager?.getActiveLogBuffer() ?? null)
+        : (manager.getSelectedView()?.log ?? null);
+    return buffer?.all() ?? [];
+  };
+
+  const moveLogSelection = (delta: number): void => {
+    const entries = getActiveLogEntries();
+    if (entries.length === 0) return;
+
+    const currentIndex = selectedLogEntryKey
+      ? entries.findIndex((entry, index) => getLogEntryKey(entry, index) === selectedLogEntryKey)
+      : -1;
+    const nextIndex =
+      currentIndex === -1
+        ? delta < 0
+          ? entries.length - 1
+          : 0
+        : clamp(currentIndex + delta, 0, entries.length - 1);
+    const nextEntry = entries[nextIndex];
+    if (!nextEntry) return;
+
+    activatePanel("logs");
+    selectedLogEntryKey = getLogEntryKey(nextEntry, nextIndex);
+    expandedLogEntryKey = selectedLogEntryKey;
+    logsFollowTail = false;
+    invalidateLogs();
+    renderAll();
+  };
 
   const focusWhenVisible = (target: BoxRenderable, focus: () => void): void => {
     queueMicrotask(() => {
@@ -1204,6 +1524,13 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       const box = new BoxRenderable(renderer, {
         id: `log-row-${index}`,
         width: "100%",
+        flexDirection: "column",
+        backgroundColor: panelBackgroundColor("logs"),
+      });
+
+      const summary = new BoxRenderable(renderer, {
+        id: `log-row-summary-${index}`,
+        width: "100%",
         flexDirection: "row",
         alignItems: "center",
         columnGap: LOG_ROW_GAP_X,
@@ -1242,12 +1569,22 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
         truncate: true,
       });
 
-      box.add(timestamp);
-      box.add(stream);
-      box.add(message);
-      box.add(meta);
+      const detail = new TextRenderable(renderer, {
+        id: `log-row-detail-${index}`,
+        width: "100%",
+        fg: palette.active,
+        wrapMode: "char",
+        visible: false,
+      });
+
+      summary.add(timestamp);
+      summary.add(stream);
+      summary.add(message);
+      summary.add(meta);
+      box.add(summary);
+      box.add(detail);
       logList.add(box);
-      nextRows.push({ box, timestamp, stream, message, meta });
+      nextRows.push({ entryKey: null, box, summary, timestamp, stream, message, meta, detail });
     }
 
     while (nextRows.length > desired) {
@@ -1265,6 +1602,21 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     addCommandField.backgroundColor =
       addFocusField === "command" ? palette.inputFocus : palette.input;
   };
+
+  manifestPanel.onMouseDown = () => activatePanel("manifest");
+  manifestList.onMouseDown = () => activatePanel("manifest");
+  manifestList.onMouseOut = () => setHoveredManifestRow(-1);
+
+  if (dockerPanel && dockerList) {
+    dockerPanel.onMouseDown = () => activatePanel("docker");
+    dockerList.onMouseDown = () => activatePanel("docker");
+    dockerList.onMouseOut = () => setHoveredDockerRow(-1);
+  }
+
+  logPanel.onMouseDown = () => activatePanel("logs");
+  logList.onMouseDown = () => activatePanel("logs");
+  logList.onMouseOut = () => setHoveredLogRow(null);
+  root.onMouseDown = () => collapseExpandedLog();
 
   const clearDiscoverySelectionLines = () => {
     for (const line of discoverySelectionLines) {
@@ -1342,26 +1694,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   };
 
   const updateHeader = () => {
-    const views = manager.getViews();
-    const running = views.filter((view) => view.state === "RUNNING").length;
-    const failed = views.filter((view) => view.state === "FAILED").length;
-
-    if (!hasDocker || !dockerManager) {
-      headerStatus.content = `${running}/${views.length} running${failed > 0 ? ` | ${failed} failed` : ""}`;
-      return;
-    }
-
-    const dockerServices = dockerManager.getServices();
-    const dockerRunning = dockerServices.filter((service) => service.state === "running").length;
-    const dockerFailed = dockerServices.filter(
-      (service) => service.state === "dead" || service.state === "exited",
-    ).length;
-
-    headerStatus.content = `${running}/${views.length} svc${
-      failed > 0 ? ` | ${failed} failed` : ""
-    } | ${dockerRunning}/${dockerServices.length} docker${
-      dockerFailed > 0 ? ` | ${dockerFailed} stopped` : ""
-    }`;
+    rebuildHeaderStatus();
   };
 
   const rebuildList = (views: ServiceView[], selectedIndex: number) => {
@@ -1375,7 +1708,15 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       if (!line) return;
       line.content = formatManifestLine(view, selected, rowWidth);
       line.fg = selected ? palette.active : stateColor(view.state, palette);
-      line.bg = selected ? listSelectionBackground() : panelBackgroundColor("manifest");
+      line.bg = listRowBackground("manifest", selected, index === hoveredManifestIndex);
+      line.onMouseDown = (event) => {
+        event.stopPropagation();
+        selectManifestRow(index);
+      };
+      line.onMouseOver = () => setHoveredManifestRow(index);
+      line.onMouseOut = () => {
+        if (hoveredManifestIndex === index) setHoveredManifestRow(-1);
+      };
     });
 
     manifestPanelMeta.content = `${views.filter((view) => view.state === "RUNNING").length}/${views.length} running`;
@@ -1398,7 +1739,15 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       if (!line) return;
       line.content = formatDockerLine(service, selected, rowWidth);
       line.fg = selected ? palette.active : dockerStateColor(service.state, palette);
-      line.bg = selected ? listSelectionBackground() : panelBackgroundColor("docker");
+      line.bg = listRowBackground("docker", selected, index === hoveredDockerIndex);
+      line.onMouseDown = (event) => {
+        event.stopPropagation();
+        selectDockerRow(index);
+      };
+      line.onMouseOver = () => setHoveredDockerRow(index);
+      line.onMouseOut = () => {
+        if (hoveredDockerIndex === index) setHoveredDockerRow(-1);
+      };
     });
 
     dockerPanelMeta.content = `${services.filter((service) => service.state === "running").length}/${
@@ -1429,11 +1778,18 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const pinnedBottom = getScrollBoxMaxTop(logList) - logList.scrollTop <= 1;
     const previousScrollTop = logList.scrollTop;
 
+    if (switchedTarget) resetLogInteraction();
+
     lastLogVersion = version;
     lastSelectedIndex = selectedIndex;
     lastLogSource = source;
 
     const entries = buffer?.all() ?? [];
+    const entryKeys = new Set(entries.map((entry, index) => getLogEntryKey(entry, index)));
+    if (hoveredLogEntryKey && !entryKeys.has(hoveredLogEntryKey)) hoveredLogEntryKey = null;
+    if (selectedLogEntryKey && !entryKeys.has(selectedLogEntryKey)) selectedLogEntryKey = null;
+    if (expandedLogEntryKey && !entryKeys.has(expandedLogEntryKey)) expandedLogEntryKey = null;
+
     logLines = syncLogRows(entries.length);
 
     const viewportWidth = Math.floor(logList.viewport.width);
@@ -1443,14 +1799,30 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       const row = logLines[index];
       if (!row) return;
 
+      const key = getLogEntryKey(entry, index);
+      const selected = selectedLogEntryKey === key;
+      const expanded = expandedLogEntryKey === key;
+      const backgroundColor = logRowBackground(key);
+      row.entryKey = key;
       const metaBase = `#${index + 1}`;
       const reservedWidth =
         LOG_TIMESTAMP_WIDTH + LOG_STREAM_WIDTH + metaBase.length + LOG_ROW_GAP_X * 3;
       const messageWidth = Math.max(LOG_MIN_MESSAGE_WIDTH, rowWidth - reservedWidth);
       const truncated = truncateLogMessage(entry.line, messageWidth);
-      const metaText = truncated.hidden > 0 ? `${metaBase} +${truncated.hidden} cols` : metaBase;
+      const metaText = expanded
+        ? `${metaBase} open`
+        : truncated.hidden > 0
+          ? `${metaBase} +${truncated.hidden} cols`
+          : metaBase;
 
-      row.box.backgroundColor = panelBackgroundColor("logs");
+      row.box.backgroundColor = backgroundColor;
+      row.box.rowGap = expanded ? PANEL_CONTENT_GAP_Y : COMPACT_GAP;
+      row.box.paddingTop = expanded ? PANEL_CONTENT_GAP_Y : 0;
+      row.box.paddingBottom = expanded ? PANEL_CONTENT_GAP_Y : 0;
+      row.box.paddingLeft = expanded ? PANEL_CONTENT_GAP_Y : 0;
+      row.box.paddingRight = expanded ? PANEL_CONTENT_GAP_Y : 0;
+      row.box.marginY = expanded ? PANEL_CONTENT_GAP_Y : 0;
+      row.summary.backgroundColor = backgroundColor;
       row.timestamp.content = formatLogTimestamp(entry.timestamp);
       row.timestamp.fg = palette.muted;
       row.stream.content = formatLogStream(entry.stream);
@@ -1459,12 +1831,32 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       row.message.fg = entry.stream === "stderr" ? palette.red : palette.active;
       row.meta.content = metaText;
       row.meta.fg = truncated.hidden > 0 ? palette.amber : palette.muted;
+      row.detail.content = `${" ".repeat(LOG_DETAIL_PADDING_LEFT)}${entry.line}`;
+      row.detail.fg = entry.stream === "stderr" ? palette.red : palette.active;
+      row.detail.visible = expanded;
+      row.detail.bg = backgroundColor;
+
+      row.box.onMouseDown = (event) => {
+        event.stopPropagation();
+        toggleLogRow(entry, index);
+      };
+      row.box.onMouseOver = () => setHoveredLogRow(key);
+      row.box.onMouseOut = () => {
+        if (hoveredLogEntryKey === key) setHoveredLogRow(null);
+      };
     });
 
     if (switchedTarget || logsFollowTail || pinnedBottom) {
       logList.scrollTop = getScrollBoxMaxTop(logList);
     } else {
       logList.scrollTop = Math.min(previousScrollTop, getScrollBoxMaxTop(logList));
+    }
+
+    const selectedLogIndex = selectedLogEntryKey
+      ? entries.findIndex((entry, index) => getLogEntryKey(entry, index) === selectedLogEntryKey)
+      : -1;
+    if (selectedLogIndex >= 0) {
+      ensureIndexVisible(logList, selectedLogIndex);
     }
 
     const visibleStart = entries.length === 0 ? 0 : Math.min(entries.length, logList.scrollTop + 1);
@@ -1495,9 +1887,17 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
     logPanelTitle.content = "Logs";
     logPanelTitle.fg = panelTitleColor("logs");
-    logPanel.backgroundColor = panelBackgroundColor("logs");
+    const logsBackground = panelBackgroundColor("logs");
+    logPanel.backgroundColor = logsBackground;
+    logList.backgroundColor = logsBackground;
+    logList.wrapper.backgroundColor = logsBackground;
+    logList.viewport.backgroundColor = logsBackground;
+    logList.content.backgroundColor = logsBackground;
     for (const row of logLines) {
-      row.box.backgroundColor = panelBackgroundColor("logs");
+      const rowBackground = row.entryKey ? logRowBackground(row.entryKey) : logsBackground;
+      row.box.backgroundColor = rowBackground;
+      row.summary.backgroundColor = rowBackground;
+      row.detail.bg = rowBackground;
     }
 
     if (dockerPanel && dockerPanelTitle) {
@@ -1533,39 +1933,65 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const sideWidth = hasDocker
       ? clamp(Math.floor(renderer.width * 0.34), 36, 52)
       : clamp(Math.floor(renderer.width * 0.38), 34, 58);
-    const nextLogsPanelVisible =
+    const manifestPanelVisible = focusManager.isPanelVisible("manifest");
+    const dockerPanelVisible = hasDocker && focusManager.isPanelVisible("docker");
+    const sidePanelsVisible = manifestPanelVisible || dockerPanelVisible;
+    const logsRequested = focusManager.isPanelVisible("logs");
+    const logsWidthAvailable =
+      !sidePanelsVisible ||
       (stacked
         ? renderer.width - APP_INSET_X * 2
         : renderer.width - APP_INSET_X * 2 - sideWidth - PANEL_GAP_X) >= MIN_LOG_PANEL_WIDTH;
+    const nextLogsPanelVisible = logsRequested && logsWidthAvailable;
 
+    manifestPanel.visible = manifestPanelVisible;
+    if (dockerPanel) {
+      dockerPanel.visible = dockerPanelVisible;
+    }
+    sideColumn.visible = sidePanelsVisible;
     logsPanelVisible = nextLogsPanelVisible;
-    main.flexDirection = stacked || !logsPanelVisible ? "column" : "row";
     logPanel.visible = logsPanelVisible;
 
-    if (!logsPanelVisible && focusManager.getActivePanel() === "logs") {
-      focusManager.setActivePanel("manifest");
-    }
+    focusManager.ensureActivePanelVisible(getRenderedPanels());
 
-    if (stacked || !logsPanelVisible) {
+    if (!sidePanelsVisible && logsPanelVisible) {
+      main.flexDirection = "column";
       sideColumn.width = "100%";
-      sideColumn.height = logsPanelVisible
-        ? hasDocker
-          ? Math.max(12, Math.floor(renderer.height * 0.35))
-          : Math.max(10, Math.floor(renderer.height * 0.28))
-        : "auto";
-      sideColumn.flexGrow = logsPanelVisible ? 0 : 1;
+      sideColumn.height = "auto";
+      sideColumn.flexGrow = 0;
       manifestPanel.flexGrow = 1;
-
       if (dockerPanel) {
         dockerPanel.flexGrow = 1;
       }
-
+      logPanel.flexGrow = 1;
+    } else if (sidePanelsVisible && !logsPanelVisible) {
+      main.flexDirection = "column";
+      sideColumn.width = "100%";
+      sideColumn.height = "auto";
+      sideColumn.flexGrow = 1;
+      manifestPanel.flexGrow = dockerPanelVisible ? 2 : 1;
+      if (dockerPanel) {
+        dockerPanel.flexGrow = 1;
+      }
+      logPanel.flexGrow = 0;
+    } else if (stacked) {
+      main.flexDirection = "column";
+      sideColumn.width = "100%";
+      sideColumn.height = hasDocker
+        ? Math.max(12, Math.floor(renderer.height * 0.35))
+        : Math.max(10, Math.floor(renderer.height * 0.28));
+      sideColumn.flexGrow = 0;
+      manifestPanel.flexGrow = 1;
+      if (dockerPanel) {
+        dockerPanel.flexGrow = 1;
+      }
       logPanel.flexGrow = 1;
     } else {
+      main.flexDirection = "row";
       sideColumn.width = sideWidth;
       sideColumn.height = "auto";
       sideColumn.flexGrow = 0;
-      manifestPanel.flexGrow = hasDocker ? 2 : 1;
+      manifestPanel.flexGrow = dockerPanelVisible ? 2 : 1;
 
       if (dockerPanel) {
         dockerPanel.flexGrow = 1;
@@ -1594,7 +2020,6 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     headerTitle.fg = palette.active;
     headerPath.fg = palette.muted;
     headerVersion.fg = palette.active;
-    headerStatus.fg = palette.muted;
 
     manifestPanel.backgroundColor = panelBackgroundColor("manifest");
     manifestPanelMeta.fg = palette.muted;
@@ -1616,8 +2041,13 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       };
     }
 
-    logPanel.backgroundColor = panelBackgroundColor("logs");
+    const logsBackground = panelBackgroundColor("logs");
+    logPanel.backgroundColor = logsBackground;
     logPanelMeta.fg = palette.muted;
+    logList.backgroundColor = logsBackground;
+    logList.wrapper.backgroundColor = logsBackground;
+    logList.viewport.backgroundColor = logsBackground;
+    logList.content.backgroundColor = logsBackground;
     logList.verticalScrollbarOptions = {
       trackOptions: {
         backgroundColor: palette.element,
@@ -1626,7 +2056,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     };
 
     footerStatePanel.backgroundColor = palette.panel;
-    footerShortcutsPanel.backgroundColor = palette.panel;
+    footerShortcutsPanel.backgroundColor = "transparent";
 
     overlayBg.backgroundColor = palette.overlay;
 
@@ -1677,10 +2107,15 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   applyLayout();
 
   const unsubManager = manager.onUpdate(renderAll);
-  const unsubFocus = focusManager.onUpdate(renderAll);
+  const unsubFocus = focusManager.onUpdate(applyLayout);
   const unsubDocker = dockerManager ? dockerManager.onUpdate(renderAll) : () => {};
 
   const controls: UiControls = {
+    setShortcutHandler(handler) {
+      shortcutHandler = handler;
+      renderAll();
+    },
+
     showEditOverlay(toml: string) {
       overlayBg.visible = true;
       editOverlay.visible = true;
@@ -1836,6 +2271,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
     renderAll,
 
+    moveLogSelection,
+
     scrollLogs(delta: number) {
       const next = Math.max(0, Math.min(logList.scrollTop + delta, getScrollBoxMaxTop(logList)));
       logList.scrollTop = next;
@@ -1879,6 +2316,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       return logsFollowTail;
     },
 
+    getLogsFollowTail() {
+      return logsFollowTail;
+    },
+
     setLogsFollowTail(enabled: boolean) {
       logsFollowTail = enabled;
       if (logsFollowTail) {
@@ -1893,6 +2334,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
         const buffer = dockerManager?.getSelectedLogBuffer() ?? null;
         if (buffer) {
           buffer.clear();
+          resetLogInteraction();
           lastLogVersion = -1;
           lastSelectedIndex = -1;
           lastLogSource = source;
@@ -1904,6 +2346,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       const view = manager.getSelectedView();
       if (view) {
         view.log.clear();
+        resetLogInteraction();
         lastLogVersion = -1;
         lastSelectedIndex = -1;
         lastLogSource = source;
@@ -1932,6 +2375,17 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 interface InitUiOptions {
   selection: DiscoverySelection;
   warnings: string[];
+  loading?: boolean;
+  error?: string;
+}
+
+export interface InitUiControls {
+  setSelection: (selection: DiscoverySelection) => void;
+  setWarnings: (warnings: string[]) => void;
+  setLoading: (loading: boolean) => void;
+  setError: (message: string) => void;
+  clearError: () => void;
+  isLoading: () => boolean;
 }
 
 const formatInitSelectionLine = (item: SelectionItem, active: boolean): string => {
@@ -1942,8 +2396,14 @@ const formatInitSelectionLine = (item: SelectionItem, active: boolean): string =
   return `${cursor} ${selected} ${serviceName}  ${command}`;
 };
 
-export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => void) => {
-  const { selection, warnings } = opts;
+export const buildInitUi = (
+  renderer: CliRenderer,
+  opts: InitUiOptions,
+): { teardown: () => void; controls: InitUiControls } => {
+  let selection = opts.selection;
+  let warnings = [...opts.warnings];
+  let loading = opts.loading ?? false;
+  let errorMessage = opts.error ?? "";
   let palette = getTheme(renderer.themeMode);
 
   const root = new BoxRenderable(renderer, {
@@ -2049,6 +2509,12 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
   });
   card.add(warningContainer);
 
+  const errorText = new TextRenderable(renderer, {
+    content: "",
+    fg: palette.red,
+  });
+  card.add(errorText);
+
   const prompt = new TextRenderable(renderer, {
     content: "",
     fg: palette.muted,
@@ -2124,6 +2590,7 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
 
   let selectionLines: TextRenderable[] = [];
   let warningLines: TextRenderable[] = [];
+  let unsubSelection: () => void = () => {};
 
   const clearSelectionLines = () => {
     for (const line of selectionLines) {
@@ -2143,6 +2610,12 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
 
   const rebuildSelectionLines = () => {
     clearSelectionLines();
+
+    if (loading) {
+      detectedSummary.content = "\nDetecting services in this workspace...";
+      prompt.content = "\nPlease wait.";
+      return;
+    }
 
     const items = selection.getItems();
     const total = items.length;
@@ -2174,7 +2647,7 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
   const rebuildWarnings = () => {
     clearWarningLines();
 
-    if (warnings.length === 0) {
+    if (loading || warnings.length === 0) {
       warningTitle.content = "";
       return;
     }
@@ -2191,9 +2664,14 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
     });
   };
 
+  const rebuildError = () => {
+    errorText.content = errorMessage ? `\n${errorMessage}` : "";
+  };
+
   const renderAll = () => {
     rebuildSelectionLines();
     rebuildWarnings();
+    rebuildError();
     renderer.requestRender();
   };
 
@@ -2208,6 +2686,7 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
     noManifest.fg = palette.active;
     detectedSummary.fg = palette.muted;
     warningTitle.fg = palette.amber;
+    errorText.fg = palette.red;
     prompt.fg = palette.muted;
 
     for (const item of footerItems) {
@@ -2218,14 +2697,48 @@ export const buildInitUi = (renderer: CliRenderer, opts: InitUiOptions): (() => 
     renderAll();
   };
 
-  const unsubSelection = selection.onUpdate(renderAll);
+  const controls: InitUiControls = {
+    setSelection(nextSelection) {
+      unsubSelection();
+      selection = nextSelection;
+      unsubSelection = selection.onUpdate(renderAll);
+      renderAll();
+    },
 
+    setWarnings(nextWarnings) {
+      warnings = [...nextWarnings];
+      renderAll();
+    },
+
+    setLoading(nextLoading) {
+      loading = nextLoading;
+      renderAll();
+    },
+
+    setError(message: string) {
+      errorMessage = message;
+      renderAll();
+    },
+
+    clearError() {
+      errorMessage = "";
+      renderAll();
+    },
+
+    isLoading() {
+      return loading;
+    },
+  };
+
+  unsubSelection = selection.onUpdate(renderAll);
   renderer.on("theme_mode", applyTheme);
   renderAll();
 
-  return () => {
+  const teardown = () => {
     renderer.off("theme_mode", applyTheme);
     unsubSelection();
     root.destroy();
   };
+
+  return { teardown, controls };
 };

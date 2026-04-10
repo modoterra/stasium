@@ -15,6 +15,7 @@ import { getTopologicalServiceOrder } from "./service-graph";
 import { ServiceManager } from "./service-manager";
 import { fileExists, getErrorMessage } from "./shared";
 import { createShutdownHandler } from "./shutdown";
+import type { AppConfig, PanelId, Shortcut } from "./types";
 import { type UiControls, buildInitUi, buildUi } from "./ui";
 
 const MANIFEST_PATH = "stasium.toml";
@@ -25,9 +26,31 @@ type ShutdownController = {
   uninstall: () => void;
 };
 
+type AppRuntime = {
+  disposed: boolean;
+  closing: boolean;
+  dockerManager: DockerManager | null;
+  exitCode: number | null;
+};
+
+type MainUiSession = {
+  teardown: () => void;
+  controls: UiControls;
+  focusManager: FocusManager;
+  dockerManager: DockerManager | null;
+};
+
+type MainUiSnapshot = {
+  activePanel: PanelId;
+  visiblePanels: PanelId[];
+  logsFollowTail: boolean;
+};
+
 const setupInitSelectionKeybindings = (
   renderer: Awaited<ReturnType<typeof createCliRenderer>>,
-  selection: DiscoverySelection,
+  getSelection: () => DiscoverySelection,
+  isLoading: () => boolean,
+  onQuit: () => void,
   onConfirm: () => Promise<void>,
 ) => {
   let creatingManifest = false;
@@ -36,29 +59,29 @@ const setupInitSelectionKeybindings = (
     if (key.eventType === "release") return;
 
     if (key.ctrl && key.name === "c") {
-      renderer.destroy();
+      onQuit();
       return;
     }
 
     switch (key.name) {
       case "up":
-        selection.moveCursor(-1);
+        getSelection().moveCursor(-1);
         return;
       case "down":
-        selection.moveCursor(1);
+        getSelection().moveCursor(1);
         return;
       case "space":
-        selection.toggleCursor();
+        getSelection().toggleCursor();
         return;
       case "a":
-        selection.selectAll();
+        getSelection().selectAll();
         return;
       case "n":
-        selection.selectNone();
+        getSelection().selectNone();
         return;
       case "enter":
       case "return": {
-        if (creatingManifest) return;
+        if (creatingManifest || isLoading()) return;
         creatingManifest = true;
         try {
           await onConfirm();
@@ -69,7 +92,7 @@ const setupInitSelectionKeybindings = (
       }
       case "q":
       case "escape":
-        renderer.destroy();
+        onQuit();
         return;
       default:
         return;
@@ -84,6 +107,8 @@ const setupKeybindings = (
   dockerManager: DockerManager | null,
   controls: UiControls,
   manifestPath: string,
+  appConfig: AppConfig | undefined,
+  runtime: AppRuntime,
   shutdown: ShutdownController,
 ) => {
   let deleteConfirming = false;
@@ -176,10 +201,10 @@ const setupKeybindings = (
 
     switch (key.name) {
       case "up":
-        controls.scrollLogs(-3);
+        controls.moveLogSelection(-1);
         break;
       case "down":
-        controls.scrollLogs(3);
+        controls.moveLogSelection(1);
         break;
       case "g":
         controls.scrollLogsToTop();
@@ -226,7 +251,7 @@ const setupKeybindings = (
         const config = parseServiceBlock(toml);
         const index = manager.getSelectedIndex();
         await manager.updateServiceConfig(index, config);
-        await saveManifest(manifestPath, manager.getConfigs());
+        await saveManifest(manifestPath, manager.getConfigs(), appConfig);
         await syncPids();
       } catch (error) {
         controls.setEditError(getErrorMessage(error));
@@ -256,7 +281,7 @@ const setupKeybindings = (
 
       try {
         await manager.addService({ name, command });
-        await saveManifest(manifestPath, manager.getConfigs());
+        await saveManifest(manifestPath, manager.getConfigs(), appConfig);
         await syncPids();
         controls.hideAddOverlay();
         focusManager.setMode("normal");
@@ -336,7 +361,7 @@ const setupKeybindings = (
             await manager.addService(service);
           }
 
-          await saveManifest(manifestPath, manager.getConfigs());
+          await saveManifest(manifestPath, manager.getConfigs(), appConfig);
           await syncPids();
 
           for (const warning of finalized.warnings) {
@@ -359,7 +384,7 @@ const setupKeybindings = (
   const handleDeleteConfirm = async (key: KeyEvent) => {
     if (key.name === "y") {
       await manager.removeSelected();
-      await saveManifest(manifestPath, manager.getConfigs());
+      await saveManifest(manifestPath, manager.getConfigs(), appConfig);
       await syncPids();
       deleteConfirming = false;
       controls.hideDeleteConfirm();
@@ -373,16 +398,178 @@ const setupKeybindings = (
     }
   };
 
+  const triggerManifestShortcut = async (shortcut: Shortcut): Promise<void> => {
+    switch (shortcut.label) {
+      case "start":
+        await manager.startSelected();
+        return;
+      case "stop":
+        await manager.stopSelected();
+        return;
+      case "restart":
+        await manager.restartSelected();
+        return;
+      case "add":
+        focusManager.setMode("adding");
+        controls.showAddOverlay();
+        return;
+      case "discover":
+        await openDiscovery();
+        return;
+      case "delete": {
+        const view = manager.getSelectedView();
+        if (!view) return;
+        deleteConfirming = true;
+        controls.showDeleteConfirm(view.name);
+        return;
+      }
+      case "edit": {
+        const config = manager.getSelectedConfig();
+        if (!config) return;
+        focusManager.setMode("editing");
+        controls.showEditOverlay(renderServiceBlock(config));
+        return;
+      }
+      case "select":
+        manager.moveSelection(1);
+        return;
+      default:
+        return;
+    }
+  };
+
+  const triggerLogsShortcut = async (shortcut: Shortcut): Promise<void> => {
+    switch (shortcut.label) {
+      case "select":
+        controls.moveLogSelection(1);
+        return;
+      case "follow":
+        controls.toggleLogsFollowTail();
+        return;
+      case "top":
+        controls.scrollLogsToTop();
+        return;
+      case "bottom":
+        controls.scrollLogsToBottom();
+        return;
+      case "clear":
+        controls.clearLogs();
+        return;
+      default:
+        return;
+    }
+  };
+
+  const triggerDockerShortcut = async (shortcut: Shortcut): Promise<void> => {
+    if (!dockerManager) return;
+    switch (shortcut.label) {
+      case "start":
+        await dockerManager.startSelected();
+        return;
+      case "stop":
+        await dockerManager.stopSelected();
+        return;
+      case "restart":
+        await dockerManager.restartSelected();
+        return;
+      case "select":
+        dockerManager.moveSelection(1);
+        return;
+      default:
+        return;
+    }
+  };
+
+  const triggerShortcut = async (shortcut: Shortcut): Promise<void> => {
+    if (focusManager.getMode() !== "normal" || deleteConfirming) return;
+
+    switch (shortcut.label) {
+      case "manifest panel":
+        focusManager.togglePanel("manifest");
+        return;
+      case "docker panel":
+        focusManager.togglePanel("docker");
+        return;
+      case "logs panel":
+        focusManager.togglePanel("logs");
+        return;
+      case "all panels":
+        focusManager.showAllPanels();
+        return;
+      case "switch panel":
+        focusManager.cyclePanel();
+        return;
+      case "quit":
+        await handleQuit("User requested shutdown.");
+        return;
+      case "log page":
+        if (controls.isLogsPanelVisible()) controls.scrollLogsPage(1);
+        return;
+      case "log jump":
+        if (controls.isLogsPanelVisible()) controls.scrollLogsToBottom();
+        return;
+      default:
+        break;
+    }
+
+    const panel = focusManager.getActivePanel();
+    if (panel === "manifest") {
+      await triggerManifestShortcut(shortcut);
+      return;
+    }
+
+    if (panel === "logs") {
+      await triggerLogsShortcut(shortcut);
+      return;
+    }
+
+    if (panel === "docker") {
+      await triggerDockerShortcut(shortcut);
+    }
+  };
+
+  controls.setShortcutHandler((shortcut) => {
+    void triggerShortcut(shortcut).catch((error) => {
+      console.error(getErrorMessage(error));
+    });
+  });
+
+  const handleLayoutKey = (keyName: string): boolean => {
+    switch (keyName) {
+      case "1":
+        focusManager.togglePanel("manifest");
+        return true;
+      case "2":
+        if (dockerManager) {
+          focusManager.togglePanel("docker");
+          return true;
+        }
+        return false;
+      case "3":
+        focusManager.togglePanel("logs");
+        return true;
+      case "4":
+        focusManager.showAllPanels();
+        return true;
+      default:
+        return false;
+    }
+  };
+
   const handleQuit = async (reason: string): Promise<void> => {
+    runtime.closing = true;
+    runtime.exitCode = runtime.exitCode ?? 0;
+
     try {
       await shutdown.run(reason);
     } catch (error) {
       console.error(`Shutdown warning: ${getErrorMessage(error)}`);
     }
 
-    if (dockerManager) {
+    const activeDockerManager = runtime.dockerManager ?? dockerManager;
+    if (activeDockerManager) {
       try {
-        await dockerManager.destroy();
+        await activeDockerManager.destroy();
       } catch (error) {
         console.error(`Docker cleanup warning: ${getErrorMessage(error)}`);
       }
@@ -427,6 +614,10 @@ const setupKeybindings = (
       // Global normal shortcuts
       if (key.name === "tab") {
         focusManager.cyclePanel();
+        return;
+      }
+
+      if (handleLayoutKey(key.name)) {
         return;
       }
 
@@ -480,19 +671,101 @@ const setupKeybindings = (
   });
 };
 
+const isDockerEnabled = (appConfig: AppConfig | undefined): boolean =>
+  appConfig?.docker?.enabled ?? true;
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+const captureMainUiSnapshot = (session: MainUiSession): MainUiSnapshot => ({
+  activePanel: session.focusManager.getActivePanel(),
+  visiblePanels: session.focusManager.getVisiblePanels(),
+  logsFollowTail: session.controls.getLogsFollowTail(),
+});
+
+const restoreMainUiSnapshot = (
+  focusManager: FocusManager,
+  controls: UiControls,
+  snapshot: MainUiSnapshot,
+): void => {
+  for (const panel of [...focusManager.getVisiblePanels()]) {
+    if (!snapshot.visiblePanels.includes(panel)) {
+      focusManager.togglePanel(panel);
+    }
+  }
+
+  if (focusManager.isPanelVisible(snapshot.activePanel)) {
+    focusManager.setActivePanel(snapshot.activePanel);
+  }
+
+  controls.setLogsFollowTail(snapshot.logsFollowTail);
+  controls.renderAll();
+};
+
+const mountMainUiSession = (
+  renderer: Awaited<ReturnType<typeof createCliRenderer>>,
+  teardownRef: { current: (() => void) | null },
+  runtime: AppRuntime,
+  shutdown: ShutdownController,
+  manifestPath: string,
+  manager: ServiceManager,
+  manifest: Awaited<ReturnType<typeof loadManifest>>,
+  appConfig: AppConfig | undefined,
+  dockerManager: DockerManager | null,
+  snapshot?: MainUiSnapshot,
+): MainUiSession => {
+  const focusManager = new FocusManager(dockerManager !== null);
+  const { teardown, controls } = buildUi({
+    renderer,
+    manifest,
+    manager,
+    focusManager,
+    dockerManager,
+  });
+
+  teardownRef.current = teardown;
+  runtime.dockerManager = dockerManager;
+
+  renderer.keyInput.removeAllListeners("keypress");
+  setupKeybindings(
+    renderer,
+    manager,
+    focusManager,
+    dockerManager,
+    controls,
+    manifestPath,
+    appConfig,
+    runtime,
+    shutdown,
+  );
+
+  if (snapshot) {
+    restoreMainUiSnapshot(focusManager, controls, snapshot);
+  } else {
+    controls.renderAll();
+  }
+
+  if (dockerManager && !runtime.closing && !runtime.disposed) {
+    dockerManager.startPolling();
+  }
+
+  return {
+    teardown,
+    controls,
+    focusManager,
+    dockerManager,
+  };
+};
+
 const startApp = async (
   renderer: Awaited<ReturnType<typeof createCliRenderer>>,
   teardownRef: { current: (() => void) | null },
   shutdownRef: { current: ShutdownController | null },
+  runtime: AppRuntime,
 ) => {
   const manifest = await loadManifest(MANIFEST_PATH);
   const manager = new ServiceManager(manifest.services);
+  const appConfig = manifest.app;
   const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
-
-  await cleanupExistingPids(process.cwd(), {
-    logger: (message) => console.error(message),
-    knownServices: manifest.services.map((service) => service.name),
-  });
 
   shutdownRef.current?.uninstall();
   const shutdown = createShutdownHandler({
@@ -504,166 +777,275 @@ const startApp = async (
   shutdown.install();
   shutdownRef.current = shutdown;
 
-  manager.onProcessChange(() => {
-    void syncPidFiles(process.cwd(), manager.getServicePids(), {
+  const syncCurrentPids = async () => {
+    await syncPidFiles(process.cwd(), manager.getServicePids(), {
       knownServices: manager.getConfigs().map((config) => config.name),
       logger: (message) => console.error(message),
     });
+  };
+
+  manager.onProcessChange(() => {
+    void syncCurrentPids();
   });
 
-  // Detect Docker Compose
-  const composePath = await detectComposeFile(process.cwd());
-  const dockerManager = composePath ? new DockerManager(composePath) : null;
-  const hasDocker = dockerManager !== null;
+  const sessionRef: { current: MainUiSession | null } = {
+    current: mountMainUiSession(
+      renderer,
+      teardownRef,
+      runtime,
+      shutdown,
+      manifestPath,
+      manager,
+      manifest,
+      appConfig,
+      null,
+    ),
+  };
 
-  const focusManager = new FocusManager(hasDocker);
+  void (async () => {
+    try {
+      await cleanupExistingPids(process.cwd(), {
+        logger: (message) => console.error(message),
+        knownServices: manifest.services.map((service) => service.name),
+      });
+      if (runtime.closing || runtime.disposed) return;
 
-  const { teardown, controls } = buildUi({
-    renderer,
-    manifest,
-    manager,
-    focusManager,
-    dockerManager,
+      await manager.startAll({
+        shouldCancel: () => runtime.closing || runtime.disposed,
+      });
+      if (runtime.closing || runtime.disposed) return;
+
+      await syncCurrentPids();
+      if (runtime.closing || runtime.disposed || !isDockerEnabled(appConfig)) return;
+
+      const composePath = await detectComposeFile(process.cwd());
+      if (runtime.closing || runtime.disposed || !composePath) return;
+
+      while (
+        !runtime.closing &&
+        !runtime.disposed &&
+        sessionRef.current?.focusManager.getMode() !== "normal"
+      ) {
+        await sleep(50);
+      }
+      if (runtime.closing || runtime.disposed) return;
+
+      const dockerManager = new DockerManager(composePath);
+      if (runtime.closing || runtime.disposed) {
+        await dockerManager.destroy();
+        return;
+      }
+      const snapshot = sessionRef.current ? captureMainUiSnapshot(sessionRef.current) : undefined;
+
+      sessionRef.current?.teardown();
+      sessionRef.current = mountMainUiSession(
+        renderer,
+        teardownRef,
+        runtime,
+        shutdown,
+        manifestPath,
+        manager,
+        manifest,
+        appConfig,
+        dockerManager,
+        snapshot,
+      );
+    } catch (error) {
+      console.error(getErrorMessage(error));
+    }
+  })();
+};
+
+const startInitFlow = (
+  renderer: Awaited<ReturnType<typeof createCliRenderer>>,
+  teardownRef: { current: (() => void) | null },
+  runtime: AppRuntime,
+  onConfirm: (selection: DiscoverySelection, warnings: string[]) => Promise<void>,
+) => {
+  const selectionRef = { current: new DiscoverySelection([]) };
+  const warningsRef: { current: string[] } = { current: [] };
+
+  const { teardown: baseTeardown, controls } = buildInitUi(renderer, {
+    selection: selectionRef.current,
+    warnings: [],
+    loading: true,
   });
+
+  const flowState = { disposed: false };
+  const teardown = () => {
+    if (flowState.disposed) return;
+    flowState.disposed = true;
+    baseTeardown();
+  };
+
+  const quitInitFlow = () => {
+    runtime.closing = true;
+    runtime.exitCode = runtime.exitCode ?? 0;
+    renderer.destroy();
+  };
 
   teardownRef.current = teardown;
-
   renderer.keyInput.removeAllListeners("keypress");
-  setupKeybindings(
+  setupInitSelectionKeybindings(
     renderer,
-    manager,
-    focusManager,
-    dockerManager,
-    controls,
-    manifestPath,
-    shutdown,
+    () => selectionRef.current,
+    () => controls.isLoading(),
+    quitInitFlow,
+    async () => {
+      await onConfirm(selectionRef.current, warningsRef.current);
+    },
   );
 
-  if (dockerManager) {
-    dockerManager.startPolling();
-  }
+  void (async () => {
+    try {
+      const detected = await detectServices(process.cwd());
+      if (flowState.disposed || runtime.disposed || runtime.closing) return;
 
-  await manager.startAll();
-  await syncPidFiles(process.cwd(), manager.getServicePids(), {
-    knownServices: manager.getConfigs().map((config) => config.name),
-    logger: (message) => console.error(message),
-  });
-  renderer.requestRender();
+      selectionRef.current = new DiscoverySelection(detected.candidates);
+      warningsRef.current = [...detected.warnings];
+      controls.setSelection(selectionRef.current);
+      controls.setWarnings(warningsRef.current);
+      controls.clearError();
+      controls.setLoading(false);
+    } catch (error) {
+      if (flowState.disposed || runtime.disposed || runtime.closing) return;
+      warningsRef.current = [];
+      controls.setWarnings([]);
+      controls.setError(getErrorMessage(error));
+      controls.setLoading(false);
+    }
+  })();
 };
 
 export const run = async () => {
   const args = process.argv.slice(2);
+  const hasManifest = await fileExists(MANIFEST_PATH);
+  const teardownRef: { current: (() => void) | null } = { current: null };
+  const shutdownRef: { current: ShutdownController | null } = { current: null };
+  const runtime: AppRuntime = {
+    disposed: false,
+    closing: false,
+    dockerManager: null,
+    exitCode: null,
+  };
+
   if (args[0] === "init") {
     const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
-    if (await fileExists(MANIFEST_PATH)) {
+    if (hasManifest) {
       console.error(`Manifest already exists: ${manifestPath}`);
       process.exitCode = 1;
       return;
     }
 
-    const teardownRef: { current: (() => void) | null } = { current: null };
+    const renderer = await createCliRenderer({
+      exitOnCtrlC: false,
+      useMouse: true,
+      enableMouseMovement: true,
+      onDestroy: () => {
+        runtime.disposed = true;
+        runtime.closing = true;
+        teardownRef.current?.();
+        teardownRef.current = null;
 
-    try {
-      const detected = await detectServices(process.cwd());
-      const selection = new DiscoverySelection(detected.candidates);
-      const renderer = await createCliRenderer({
-        exitOnCtrlC: false,
-        onDestroy: () => {
-          teardownRef.current?.();
-          teardownRef.current = null;
-        },
-      });
-
-      teardownRef.current = buildInitUi(renderer, {
-        selection,
-        warnings: detected.warnings,
-      });
-
-      setupInitSelectionKeybindings(renderer, selection, async () => {
-        try {
-          const finalized = finalizeSelection(selection);
-          await writeManifest(manifestPath, finalized.services);
-          renderer.destroy();
-
-          console.log(`Created ${manifestPath}`);
-          if (finalized.services.length > 0) {
-            console.log("Detected services:");
-            for (const service of finalized.services) {
-              console.log(`- ${formatServiceSummary(service)}`);
-            }
-          } else {
-            console.log("No services selected. Edit stasium.toml to add services.");
-          }
-
-          const warnings = [...detected.warnings, ...finalized.warnings];
-          if (warnings.length > 0) {
-            console.log("Warnings:");
-            for (const warning of warnings) {
-              console.log(`- ${warning}`);
-            }
-          }
-        } catch (error) {
-          console.error(getErrorMessage(error));
-          process.exitCode = 1;
-          renderer.destroy();
+        if (runtime.exitCode !== null) {
+          process.exitCode = runtime.exitCode;
+          process.exit(runtime.exitCode);
         }
-      });
+      },
+    });
 
-      renderer.start();
-    } catch (error) {
-      console.error(getErrorMessage(error));
-      process.exitCode = 1;
-    }
+    startInitFlow(renderer, teardownRef, runtime, async (selection, warnings) => {
+      try {
+        const finalized = finalizeSelection(selection);
+        await writeManifest(manifestPath, finalized.services);
+        renderer.destroy();
 
+        console.log(`Created ${manifestPath}`);
+        if (finalized.services.length > 0) {
+          console.log("Detected services:");
+          for (const service of finalized.services) {
+            console.log(`- ${formatServiceSummary(service)}`);
+          }
+        } else {
+          console.log("No services selected. Edit stasium.toml to add services.");
+        }
+
+        const allWarnings = [...warnings, ...finalized.warnings];
+        if (allWarnings.length > 0) {
+          console.log("Warnings:");
+          for (const warning of allWarnings) {
+            console.log(`- ${warning}`);
+          }
+        }
+      } catch (error) {
+        console.error(getErrorMessage(error));
+        process.exitCode = 1;
+        runtime.exitCode = 1;
+        renderer.destroy();
+      }
+    });
+
+    renderer.start();
     return;
   }
 
-  const hasManifest = await fileExists(MANIFEST_PATH);
-  const teardownRef: { current: (() => void) | null } = { current: null };
-  const shutdownRef: { current: ShutdownController | null } = { current: null };
-
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
+    useMouse: true,
+    enableMouseMovement: true,
     onDestroy: () => {
+      runtime.disposed = true;
+      runtime.closing = true;
+
+      const finishCleanup = async () => {
+        if (runtime.dockerManager) {
+          try {
+            await runtime.dockerManager.destroy();
+          } catch (error) {
+            console.error(`Docker cleanup warning: ${getErrorMessage(error)}`);
+          } finally {
+            runtime.dockerManager = null;
+          }
+        }
+
+        teardownRef.current?.();
+        teardownRef.current = null;
+
+        if (runtime.exitCode !== null) {
+          process.exitCode = runtime.exitCode;
+          process.exit(runtime.exitCode);
+        }
+      };
+
       const done = shutdownRef.current?.run("Renderer destroyed; shutting down services.");
       if (done) {
         void done.finally(() => {
-          teardownRef.current?.();
-          teardownRef.current = null;
+          void finishCleanup();
         });
       } else {
-        teardownRef.current?.();
-        teardownRef.current = null;
+        void finishCleanup();
       }
     },
   });
 
   if (hasManifest) {
-    await startApp(renderer, teardownRef, shutdownRef);
+    await startApp(renderer, teardownRef, shutdownRef, runtime);
     renderer.start();
     return;
   }
 
-  // No manifest found — show the init TUI
-  const detected = await detectServices(process.cwd());
-  const selection = new DiscoverySelection(detected.candidates);
   const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
-
-  teardownRef.current = buildInitUi(renderer, {
-    selection,
-    warnings: detected.warnings,
-  });
-
-  setupInitSelectionKeybindings(renderer, selection, async () => {
+  startInitFlow(renderer, teardownRef, runtime, async (selection) => {
     try {
       const finalized = finalizeSelection(selection);
-      await writeManifest(manifestPath, finalized.services);
       teardownRef.current?.();
       teardownRef.current = null;
-      await startApp(renderer, teardownRef, shutdownRef);
+      await writeManifest(manifestPath, finalized.services);
+      await startApp(renderer, teardownRef, shutdownRef, runtime);
     } catch (error) {
       console.error(getErrorMessage(error));
       process.exitCode = 1;
+      runtime.exitCode = 1;
       renderer.destroy();
     }
   });
