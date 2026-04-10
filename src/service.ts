@@ -28,7 +28,10 @@ const resolveShell = (): string => {
   return "/bin/sh";
 };
 
+type PathReader = (cwd?: string) => Promise<string | null>;
+
 let pathRefreshPromise: Promise<string> | null = null;
+let cachedPath: string | null = null;
 
 const readPathFromShell = async (cwd?: string): Promise<string | null> => {
   try {
@@ -47,21 +50,34 @@ const readPathFromShell = async (cwd?: string): Promise<string | null> => {
   }
 };
 
+let pathReader: PathReader = readPathFromShell;
+
 const getFreshPath = async (cwd?: string): Promise<string> => {
+  if (cachedPath !== null) return cachedPath;
   if (pathRefreshPromise) return pathRefreshPromise;
   pathRefreshPromise = (async () => {
-    const freshPath = await readPathFromShell(cwd);
-    if (freshPath) {
-      process.env.PATH = freshPath;
-      return freshPath;
-    }
-    return process.env.PATH ?? "";
+    const freshPath = await pathReader(cwd);
+    cachedPath = freshPath ?? process.env.PATH ?? "";
+    process.env.PATH = cachedPath;
+    return cachedPath;
   })();
   try {
     return await pathRefreshPromise;
   } finally {
     pathRefreshPromise = null;
   }
+};
+
+export const resetPathCacheForTests = (): void => {
+  cachedPath = null;
+  pathRefreshPromise = null;
+  pathReader = readPathFromShell;
+};
+
+export const setPathReaderForTests = (reader: PathReader): void => {
+  cachedPath = null;
+  pathRefreshPromise = null;
+  pathReader = reader;
 };
 
 const buildSpawnEnv = async (

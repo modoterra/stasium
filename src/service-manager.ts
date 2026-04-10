@@ -4,6 +4,7 @@ import {
   ServiceGraphError,
   getDependencyClosure,
   getDependentsClosure,
+  getTopologicalServiceLayers,
   getTopologicalServiceOrder,
   validateServiceGraph,
 } from "./service-graph";
@@ -117,10 +118,20 @@ export class ServiceManager {
     return entries;
   }
 
-  async startAll(): Promise<void> {
-    await this.forEachResolvedService(this.getTopologicalOrderNames(), async (service) => {
-      await this.startService(service);
-    });
+  async startAll(options: { shouldCancel?: () => boolean } = {}): Promise<void> {
+    const layers = this.getTopologicalLayers();
+
+    for (const layer of layers) {
+      if (options.shouldCancel?.()) return;
+
+      await Promise.all(
+        layer.map(async (name) => {
+          const service = this.getServiceByName(name);
+          if (!service) return;
+          await this.startService(service);
+        }),
+      );
+    }
   }
 
   async stopAll(): Promise<void> {
@@ -370,6 +381,10 @@ export class ServiceManager {
 
   private getTopologicalOrderNames(): string[] {
     return this.runGraphOperation(() => getTopologicalServiceOrder(this.getConfigs()));
+  }
+
+  private getTopologicalLayers(): string[][] {
+    return this.runGraphOperation(() => getTopologicalServiceLayers(this.getConfigs()));
   }
 
   private getStartOrderForService(name: string): string[] {

@@ -3,6 +3,7 @@ import {
   ServiceGraphError,
   getDependencyClosure,
   getDependentsClosure,
+  getTopologicalServiceLayers,
   getTopologicalServiceOrder,
   validateServiceGraph,
 } from "./service-graph";
@@ -28,6 +29,17 @@ const baseServices: ServiceConfig[] = [
 describe("service graph", () => {
   test("orders services by dependency", () => {
     expect(getTopologicalServiceOrder(baseServices)).toEqual(["db", "api", "worker"]);
+  });
+
+  test("groups services into dependency layers", () => {
+    expect(getTopologicalServiceLayers(baseServices)).toEqual([["db"], ["api"], ["worker"]]);
+    expect(
+      getTopologicalServiceLayers([
+        { name: "db", command: ["bun", "--version"] },
+        { name: "cache", command: ["bun", "--version"] },
+        { name: "api", command: ["bun", "--version"], depends_on: ["db", "cache"] },
+      ]),
+    ).toEqual([["db", "cache"], ["api"]]);
   });
 
   test("returns dependency closure for a target service", () => {

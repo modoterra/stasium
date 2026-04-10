@@ -131,6 +131,57 @@ export const getTopologicalServiceOrder = (services: ServiceConfig[]): string[] 
   return ordered;
 };
 
+export const getTopologicalServiceLayers = (services: ServiceConfig[]): string[][] => {
+  validateServiceGraph(services);
+
+  const indegree = new Map<string, number>();
+  const dependents = new Map<string, string[]>();
+
+  for (const service of services) {
+    indegree.set(service.name, 0);
+    dependents.set(service.name, []);
+  }
+
+  for (const service of services) {
+    for (const dependency of dependenciesOf(service)) {
+      indegree.set(service.name, (indegree.get(service.name) ?? 0) + 1);
+      const list = dependents.get(dependency);
+      if (list) {
+        list.push(service.name);
+      }
+    }
+  }
+
+  let queue = services
+    .map((service) => service.name)
+    .filter((name) => (indegree.get(name) ?? 0) === 0);
+  const layers: string[][] = [];
+  let visited = 0;
+
+  while (queue.length > 0) {
+    const layer = [...queue];
+    layers.push(layer);
+    visited += layer.length;
+    queue = [];
+
+    for (const name of layer) {
+      for (const dependent of dependents.get(name) ?? []) {
+        const next = (indegree.get(dependent) ?? 0) - 1;
+        indegree.set(dependent, next);
+        if (next === 0) {
+          queue.push(dependent);
+        }
+      }
+    }
+  }
+
+  if (visited !== services.length) {
+    throw new ServiceGraphError("Dependency cycle detected");
+  }
+
+  return layers;
+};
+
 export const getDependencyClosure = (services: ServiceConfig[], target: string): Set<string> => {
   validateServiceGraph(services);
 
