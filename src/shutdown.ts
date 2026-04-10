@@ -34,7 +34,9 @@ export const createShutdownHandler = ({
   const run = async (reason?: string): Promise<void> => {
     if (shutdownPromise) return shutdownPromise;
     shuttingDown = true;
+    const activeServicePids = getServicePids();
     shutdownPromise = (async () => {
+      uninstall();
       if (reason) logger?.(reason);
       await manager.stopAll();
       const clean = await manager.waitForExit(EXIT_WAIT_MS);
@@ -42,7 +44,7 @@ export const createShutdownHandler = ({
         await manager.forceStopAll();
         await manager.waitForExit(EXIT_WAIT_MS);
       }
-      await removeServicePidFiles(cwd, getServicePids());
+      await removeServicePidFiles(cwd, activeServicePids);
       await removePidFilesForServices(
         cwd,
         manager.getConfigs().map((config) => config.name),
@@ -53,16 +55,18 @@ export const createShutdownHandler = ({
   };
 
   const handleSignal = (signal: NodeJS.Signals): void => {
-    void run(`Received ${signal}; shutting down services.`).then(() => {
-      process.exitCode = process.exitCode ?? 0;
-      process.exit(process.exitCode ?? 0);
-    });
-  };
-
-  const handleExit = (): void => {
-    if (!shuttingDown) {
-      void run("Process exit; shutting down services.");
-    }
+    void run(`Received ${signal}; shutting down services.`)
+      .catch((error) => {
+        logger?.(
+          `Shutdown warning after ${signal}: ${
+            error instanceof Error ? error.message : String(error ?? "")
+          }`,
+        );
+      })
+      .finally(() => {
+        process.exitCode = process.exitCode ?? 0;
+        process.exit(process.exitCode ?? 0);
+      });
   };
 
   const handleBeforeExit = (): void => {
@@ -74,10 +78,18 @@ export const createShutdownHandler = ({
   const handleError = (message: string, error?: unknown): void => {
     const detail = error instanceof Error ? error.message : String(error ?? "");
     const note = detail ? `${message}: ${detail}` : message;
-    void run(note).then(() => {
-      process.exitCode = 1;
-      process.exit(1);
-    });
+    void run(note)
+      .catch((runError) => {
+        logger?.(
+          `Shutdown warning after ${message}: ${
+            runError instanceof Error ? runError.message : String(runError ?? "")
+          }`,
+        );
+      })
+      .finally(() => {
+        process.exitCode = 1;
+        process.exit(1);
+      });
   };
 
   const handleUncaughtException = (error: unknown): void => {
@@ -93,7 +105,6 @@ export const createShutdownHandler = ({
       process.on(signal, handleSignal);
     }
     process.on("beforeExit", handleBeforeExit);
-    process.on("exit", handleExit);
     process.on("uncaughtException", handleUncaughtException);
     process.on("unhandledRejection", handleUnhandledRejection);
   };
@@ -103,7 +114,6 @@ export const createShutdownHandler = ({
       process.off(signal, handleSignal);
     }
     process.off("beforeExit", handleBeforeExit);
-    process.off("exit", handleExit);
     process.off("uncaughtException", handleUncaughtException);
     process.off("unhandledRejection", handleUnhandledRejection);
   };

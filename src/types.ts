@@ -27,6 +27,10 @@ export interface LogEntry {
 export interface ServicePid {
   name: string;
   pid: number;
+  command: string[];
+  workingDir: string;
+  startedAt: string;
+  identityVerified: boolean;
 }
 
 export type PanelId = "manifest" | "logs" | "docker";

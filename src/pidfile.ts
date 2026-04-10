@@ -3,13 +3,15 @@ import { realpathSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, unlink } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, resolve } from "node:path";
+import { readLiveProcessInfo } from "./process-info";
 import type { ServicePid } from "./types";
 
-const PID_DIR_ROOT = resolve(homedir(), ".local", "share", "stasium");
 const PID_EXTENSION = ".pid";
+const PID_FILE_VERSION = 1;
 const WAIT_INTERVAL_MS = 50;
 const DEFAULT_WAIT_MS = 1500;
 const WRITE_DELAY_MS = 100;
+let pidDirRoot = resolve(homedir(), ".local", "share", "stasium");
 
 const checksum = (value: string): string => createHash("md5").update(value).digest("hex");
 
@@ -22,7 +24,11 @@ const getServiceNameFromFile = (path: string): string => basename(path, PID_EXTE
 
 const getPidDir = (cwd: string): string => {
   const resolved = realpathSync(cwd);
-  return resolve(PID_DIR_ROOT, checksum(resolved));
+  return resolve(pidDirRoot, checksum(resolved));
+};
+
+export const setPidDirRootForTests = (root: string | null): void => {
+  pidDirRoot = root ? resolve(root) : resolve(homedir(), ".local", "share", "stasium");
 };
 
 const ensurePidDir = async (cwd: string): Promise<string> => {
@@ -52,6 +58,7 @@ const waitForPidExit = async (pid: number, timeoutMs: number): Promise<boolean> 
   return !isProcessAlive(pid);
 };
 
+// Full process-tree cleanup relies on Unix process groups. Windows falls back to live-process checks.
 const SHOULD_SIGNAL_PROCESS_GROUP = process.platform !== "win32";
 
 const trySignalOne = (target: number, signal: NodeJS.Signals): boolean => {
@@ -82,6 +89,117 @@ const stopPid = async (pid: number, timeoutMs: number): Promise<boolean> =>
   (await trySignal(pid, "SIGTERM", timeoutMs)) ||
   (await trySignal(pid, "SIGKILL", timeoutMs));
 
+type PidFileRecord = {
+  version: typeof PID_FILE_VERSION;
+  pid: number;
+  service: string;
+  cwd: string;
+  command: string[];
+  startedAt: string;
+  identityVerified: boolean;
+  platform: NodeJS.Platform;
+};
+
+type ParsedPidFile =
+  | { kind: "legacy"; pid: number }
+  | { kind: "record"; record: PidFileRecord };
+
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
+const parsePidFileRecord = (value: unknown): PidFileRecord | null => {
+  if (value === null || typeof value !== "object") return null;
+
+  const record = value as Partial<PidFileRecord>;
+  const version = record.version;
+  const pidValue = record.pid;
+  const serviceValue = record.service;
+  const cwdValue = record.cwd;
+  const commandValue = record.command;
+  const startedAtValue = record.startedAt;
+  const identityVerifiedValue = record.identityVerified;
+  const platformValue = record.platform;
+
+  if (version !== PID_FILE_VERSION) return null;
+  if (typeof pidValue !== "number" || !Number.isInteger(pidValue) || pidValue <= 0) return null;
+  if (typeof serviceValue !== "string" || serviceValue.trim().length === 0) return null;
+  if (typeof cwdValue !== "string" || cwdValue.trim().length === 0) return null;
+  if (!isStringArray(commandValue)) return null;
+  if (typeof startedAtValue !== "string" || startedAtValue.trim().length === 0) return null;
+  if (typeof identityVerifiedValue !== "boolean") return null;
+  if (typeof platformValue !== "string" || platformValue.trim().length === 0) return null;
+
+  return {
+    version: PID_FILE_VERSION,
+    pid: pidValue,
+    service: serviceValue,
+    cwd: cwdValue,
+    command: [...commandValue],
+    startedAt: startedAtValue,
+    identityVerified: identityVerifiedValue,
+    platform: platformValue,
+  };
+};
+
+const parsePidFileContents = (contents: string): ParsedPidFile | null => {
+  const trimmed = contents.trim();
+  if (trimmed.length === 0) return null;
+
+  if (/^\d+$/.test(trimmed)) {
+    const pid = Number.parseInt(trimmed, 10);
+    if (Number.isInteger(pid) && pid > 0) {
+      return { kind: "legacy", pid };
+    }
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    const record = parsePidFileRecord(parsed);
+    return record ? { kind: "record", record } : null;
+  } catch {
+    return null;
+  }
+};
+
+const getPidFromParsed = (parsed: ParsedPidFile): number =>
+  parsed.kind === "legacy" ? parsed.pid : parsed.record.pid;
+
+const buildPidFileRecord = (service: ServicePid): PidFileRecord => ({
+  version: PID_FILE_VERSION,
+  pid: service.pid,
+  service: sanitizeServiceName(service.name),
+  cwd: service.workingDir,
+  command: [...service.command],
+  startedAt: service.startedAt,
+  identityVerified: service.identityVerified,
+  platform: process.platform,
+});
+
+const recordsMatch = (left: PidFileRecord, right: PidFileRecord): boolean =>
+  left.pid === right.pid &&
+  left.service === right.service &&
+  left.cwd === right.cwd &&
+  left.startedAt === right.startedAt &&
+  left.identityVerified === right.identityVerified &&
+  left.platform === right.platform &&
+  left.command.length === right.command.length &&
+  left.command.every((value, index) => value === right.command[index]);
+
+const liveProcessMatchesRecord = async (record: PidFileRecord): Promise<boolean> => {
+  if (!record.identityVerified) return false;
+  const live = await readLiveProcessInfo(record.pid);
+  if (!live) return false;
+  if (live.startedAt !== record.startedAt) return false;
+
+  const storedCommand = record.command.join(" ");
+  if (storedCommand.length > 0 && live.command && live.command !== storedCommand) {
+    return false;
+  }
+
+  return true;
+};
+
 const safeUnlink = async (path: string): Promise<void> => {
   try {
     await unlink(path);
@@ -91,12 +209,10 @@ const safeUnlink = async (path: string): Promise<void> => {
   }
 };
 
-const readPidFile = async (path: string): Promise<number | null> => {
+const readPidFile = async (path: string): Promise<ParsedPidFile | null> => {
   try {
     const contents = await readFile(path, "utf8");
-    const value = Number.parseInt(contents.trim(), 10);
-    if (!Number.isFinite(value) || value <= 0) return null;
-    return value;
+    return parsePidFileContents(contents);
   } catch {
     return null;
   }
@@ -128,14 +244,18 @@ export const cleanupExistingPids = async (
   if (pidFiles.length === 0) return;
 
   const known = new Set(knownServices.map((name) => sanitizeServiceName(name)));
-  const pidMap = new Map<number, { files: string[]; unknownServices: string[] }>();
+  const pidMap = new Map<
+    number,
+    { files: string[]; unknownServices: string[]; records: PidFileRecord[] }
+  >();
 
   for (const path of pidFiles) {
-    const pid = await readPidFile(path);
-    if (!pid) {
+    const parsed = await readPidFile(path);
+    if (!parsed) {
       await safeUnlink(path);
       continue;
     }
+    const pid = getPidFromParsed(parsed);
 
     const serviceName = getServiceNameFromFile(path);
     const unknown = known.size > 0 && !known.has(serviceName) ? serviceName : null;
@@ -143,10 +263,15 @@ export const cleanupExistingPids = async (
     if (entry) {
       entry.files.push(path);
       if (unknown) entry.unknownServices.push(unknown);
+      if (parsed.kind === "legacy") {
+        continue;
+      }
+      entry.records.push(parsed.record);
     } else {
       pidMap.set(pid, {
         files: [path],
         unknownServices: unknown ? [unknown] : [],
+        records: parsed.kind === "record" ? [parsed.record] : [],
       });
     }
   }
@@ -165,6 +290,17 @@ export const cleanupExistingPids = async (
     if (entry.unknownServices.length > 0) {
       const labels = entry.unknownServices.join(", ");
       logger?.(`Found PID ${pid} for removed services: ${labels}.`);
+    }
+
+    if (entry.records.length === 0 || entry.records.some((record) => !record.identityVerified)) {
+      logger?.(`Skipping live PID ${pid}; pidfile identity cannot be verified safely.`);
+      continue;
+    }
+
+    const matches = await Promise.all(entry.records.map((record) => liveProcessMatchesRecord(record)));
+    if (!matches.every(Boolean)) {
+      logger?.(`Skipping PID ${pid}; pidfile identity no longer matches the live process.`);
+      continue;
     }
 
     logger?.(`Found existing service PID ${pid}, attempting shutdown.`);
@@ -192,12 +328,12 @@ export const syncPidFiles = async (
   { knownServices = [], logger, timeoutMs = DEFAULT_WAIT_MS }: SyncOptions = {},
 ): Promise<void> => {
   const dir = await ensurePidDir(cwd);
-  const desired = new Map<string, number>();
+  const desired = new Map<string, PidFileRecord>();
   const known = new Set(knownServices.map((name) => sanitizeServiceName(name)));
 
   for (const service of services) {
-    if (!service.pid || service.pid <= 0) continue;
-    desired.set(buildPidFileName(service.name), service.pid);
+    if (!service.pid || service.pid <= 0 || service.startedAt.length === 0) continue;
+    desired.set(buildPidFileName(service.name), buildPidFileRecord(service));
   }
 
   const existing = await listPidFiles(dir);
@@ -205,54 +341,78 @@ export const syncPidFiles = async (
     existing.map(async (path) => {
       const name = basename(path);
       if (desired.has(name)) return;
-      const pid = await readPidFile(path);
-      if (!pid) {
+      const parsed = await readPidFile(path);
+      if (!parsed) {
         await safeUnlink(path);
         return;
       }
+      const pid = getPidFromParsed(parsed);
       if (pid === process.pid) return;
+      if (!isProcessAlive(pid)) {
+        await safeUnlink(path);
+        return;
+      }
       const serviceName = getServiceNameFromFile(path);
       const unknown = known.size > 0 && !known.has(serviceName);
       if (unknown) {
         logger?.(`Found PID ${pid} for removed service: ${serviceName}.`);
+        if (parsed.kind === "legacy" || !parsed.record.identityVerified) {
+          logger?.(`Skipping live PID ${pid}; pidfile identity cannot be verified safely.`);
+          return;
+        }
+        if (!(await liveProcessMatchesRecord(parsed.record))) {
+          logger?.(`Skipping PID ${pid}; pidfile identity no longer matches the live process.`);
+          return;
+        }
         const stopped = await stopPid(pid, timeoutMs);
         if (stopped) {
           await safeUnlink(path);
         }
         return;
       }
-      if (!isProcessAlive(pid)) {
-        await safeUnlink(path);
-      }
     }),
   );
 
-  for (const [fileName, pid] of desired.entries()) {
+  for (const [fileName, record] of desired.entries()) {
     const path = resolve(dir, fileName);
     const current = await readPidFile(path);
-    if (current === pid) continue;
-    if (current && current !== pid && isProcessAlive(current)) {
+    if (current?.kind === "record" && recordsMatch(current.record, record)) continue;
+
+    const currentPid = current ? getPidFromParsed(current) : null;
+    if (currentPid && currentPid !== record.pid && isProcessAlive(currentPid)) {
       await delay(WRITE_DELAY_MS);
       continue;
     }
-    writeFileSync(path, `${pid}`);
+    writeFileSync(path, JSON.stringify(record));
   }
 };
 
 export const removeServicePidFiles = async (cwd: string, services: ServicePid[]): Promise<void> => {
   const dir = getPidDir(cwd);
   const targets = services
-    .filter((service) => Number.isInteger(service.pid) && service.pid > 0)
+    .filter(
+      (service) =>
+        Number.isInteger(service.pid) && service.pid > 0 && service.startedAt.trim().length > 0,
+    )
     .map((service) => ({
       path: resolve(dir, buildPidFileName(service.name)),
-      pid: service.pid,
+      record: buildPidFileRecord(service),
     }));
 
   await Promise.all(
     targets.map(async (target) => {
       const current = await readPidFile(target.path);
-      if (current !== target.pid) return;
-      if (isProcessAlive(current)) return;
+      if (!current) return;
+
+      if (current.kind === "legacy") {
+        if (current.pid !== target.record.pid) return;
+        if (isProcessAlive(current.pid)) return;
+        await safeUnlink(target.path);
+        return;
+      }
+
+      if (!recordsMatch(current.record, target.record)) return;
+      if (isProcessAlive(current.record.pid)) return;
       await safeUnlink(target.path);
     }),
   );
@@ -267,8 +427,14 @@ export const removePidFilesForServices = async (
 
   await Promise.all(
     targets.map(async (path) => {
-      const pid = await readPidFile(path);
-      if (!pid || !isProcessAlive(pid)) {
+      const parsed = await readPidFile(path);
+      if (!parsed) {
+        await safeUnlink(path);
+        return;
+      }
+
+      const pid = getPidFromParsed(parsed);
+      if (!isProcessAlive(pid)) {
         await safeUnlink(path);
       }
     }),

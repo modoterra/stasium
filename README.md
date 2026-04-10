@@ -51,6 +51,10 @@ Inside the runtime TUI, focus the Manifest panel and press `i` to discover servi
 again and add them to the current manifest (`up/down` move, `space` toggle, `a` all,
 `n` none, `enter` add selected, `esc` cancel).
 
+Service cleanup guarantees are strongest on Linux and macOS, where `stasium` manages
+services as process groups and can tear down spawned descendants. On Windows,
+`stasium` only guarantees direct child shutdown.
+
 Discovery strategies are data-driven via TOML:
 
 - Built-in catalog: `src/discovery/strategies.toml`

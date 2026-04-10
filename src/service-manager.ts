@@ -110,9 +110,9 @@ export class ServiceManager {
   getServicePids(): ServicePid[] {
     const entries: ServicePid[] = [];
     for (const service of this.services) {
-      const pid = service.getPid();
-      if (!pid) continue;
-      entries.push({ name: service.config.name, pid });
+      const entry = service.getPidInfo();
+      if (!entry) continue;
+      entries.push(entry);
     }
     return entries;
   }

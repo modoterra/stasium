@@ -1,6 +1,7 @@
+import { readLiveProcessInfo, resolveRuntimeWorkingDir } from "./process-info";
 import { normalizeCommand } from "./command";
 import { getErrorMessage } from "./shared";
-import type { CommandSpec, LogEntry, ServiceConfig, ServiceState } from "./types";
+import type { CommandSpec, LogEntry, ServiceConfig, ServicePid, ServiceState } from "./types";
 
 export type ServiceEvent =
   | { type: "state"; state: ServiceState }
@@ -12,6 +13,7 @@ type ServiceSubscriber = (event: ServiceEvent) => void;
 const timestamp = (): string => new Date().toISOString();
 
 const lineDecoder = new TextDecoder();
+// Full process-tree cleanup relies on Unix process groups. Windows falls back to the direct child.
 const SHOULD_DETACH_PROCESS_GROUP = process.platform !== "win32";
 
 const splitLines = (buffer: string): { lines: string[]; rest: string } => {
@@ -74,17 +76,22 @@ const buildSpawnEnv = async (
 export class ServiceProcess {
   readonly config: ServiceConfig;
   private readonly detached = SHOULD_DETACH_PROCESS_GROUP;
+  private readonly workingDir: string;
   private state: ServiceState = "STOPPED";
   private process: Bun.Subprocess<"ignore", "pipe", "pipe"> | null = null;
   private subscribers: Set<ServiceSubscriber> = new Set();
   private lastExitCode: number | null = null;
   private lastSignal: string | null = null;
   private stopRequested = false;
+  private command: string[] = [];
+  private startedAt: string | null = null;
+  private identityVerified = false;
   private stdoutRemainder = "";
   private stderrRemainder = "";
 
   constructor(config: ServiceConfig) {
     this.config = config;
+    this.workingDir = resolveRuntimeWorkingDir(config.working_dir);
   }
 
   subscribe(handler: ServiceSubscriber): () => void {
@@ -108,6 +115,19 @@ export class ServiceProcess {
     return this.process?.pid ?? null;
   }
 
+  getPidInfo(): ServicePid | null {
+    const pid = this.process?.pid;
+    if (!pid || !this.startedAt || this.command.length === 0) return null;
+    return {
+      name: this.config.name,
+      pid,
+      command: [...this.command],
+      workingDir: this.workingDir,
+      startedAt: this.startedAt,
+      identityVerified: this.identityVerified,
+    };
+  }
+
   isRunning(): boolean {
     return this.process !== null;
   }
@@ -115,11 +135,15 @@ export class ServiceProcess {
   async start(): Promise<void> {
     if (this.isRunning()) return;
     this.stopRequested = false;
+    this.command = [];
+    this.startedAt = null;
+    this.identityVerified = false;
     this.setState("STARTING");
 
     let argv: string[];
     try {
       argv = normalizeCommand(this.config.command as CommandSpec);
+      this.command = [...argv];
     } catch (error) {
       this.lastExitCode = 1;
       this.lastSignal = null;
@@ -152,6 +176,9 @@ export class ServiceProcess {
       return;
     }
 
+    const processInfo = await readLiveProcessInfo(this.process.pid);
+    this.startedAt = processInfo?.startedAt ?? timestamp();
+    this.identityVerified = processInfo !== null;
     this.setState("RUNNING");
     this.attachStream(this.process.stdout, "stdout");
     this.attachStream(this.process.stderr, "stderr");
