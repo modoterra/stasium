@@ -1,0 +1,8 @@
+# stasium.toml
+
+# No services configured. Add [[service]] blocks below.
+#
+# [[service]]
+# name = "app"
+# command = ["php", "artisan", "serve"]
+# working_dir = "."
