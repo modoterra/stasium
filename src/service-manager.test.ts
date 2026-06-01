@@ -124,7 +124,7 @@ describe("ServiceManager", () => {
     await manager.stopAll();
   });
 
-  test("starts unavailable External Managed Process dependencies before direct processes", async () => {
+  test("starts unavailable External Managed Process dependencies without claiming ownership", async () => {
     const actions: string[] = [];
     const claims: string[] = [];
     class TestClaims extends ProcessClaimStore {
@@ -145,7 +145,7 @@ describe("ServiceManager", () => {
         service({
           name: "api",
           launchInstruction: ["bun", "run", "dev"],
-          startupDependencies: ["db"],
+          startupDependencies: ["docker-compose:db"],
         }),
       ],
       {
