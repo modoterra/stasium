@@ -1,10 +1,19 @@
+import { ServiceGraphError, validateServiceGraph } from "../service-graph";
 import type { ServiceConfig } from "../types";
 import type { DetectedCandidate, FinalizeSelectionResult, SelectionItem } from "./types";
 
 export type DiscoverySelectionUpdateCallback = () => void;
 
 interface FinalizeSelectionOptions {
+  existingServices?: ServiceConfig[];
   usedNames?: Iterable<string>;
+}
+
+export class CandidateSelectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CandidateSelectionError";
+  }
 }
 
 const cloneService = (service: ServiceConfig): ServiceConfig => {
@@ -124,6 +133,11 @@ export const finalizeSelectedCandidates = (
   for (const candidate of candidates) {
     const service = cloneService(candidate.service);
     const finalName = ensureUniqueName(service.name, usedNames);
+    if (finalName !== service.name) {
+      warnings.push(
+        `Candidate '${candidate.strategyId}' was renamed from '${service.name}' to '${finalName}'.`,
+      );
+    }
     usedNames.add(finalName);
     service.name = finalName;
     services.push(service);
@@ -158,10 +172,16 @@ export const finalizeSelectedCandidates = (
     service.depends_on = resolved;
   });
 
-  return {
-    services,
-    warnings,
-  };
+  try {
+    validateServiceGraph([...(options.existingServices ?? []), ...services]);
+  } catch (error) {
+    if (error instanceof ServiceGraphError) {
+      throw new CandidateSelectionError(error.message);
+    }
+    throw error;
+  }
+
+  return { services, warnings };
 };
 
 export const finalizeSelection = (

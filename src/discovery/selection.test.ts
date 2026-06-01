@@ -48,6 +48,7 @@ describe("discovery selection", () => {
     expect(finalized.services[0]?.name).toBe("app");
     expect(finalized.services[1]?.name).toBe("app-2");
     expect(finalized.services[1]?.depends_on).toEqual(["app"]);
+    expect(finalized.warnings).toContain("Candidate 'worker' was renamed from 'app' to 'app-2'.");
   });
 
   test("finalizeSelection uses current selected state", () => {
@@ -74,5 +75,63 @@ describe("discovery selection", () => {
 
     expect(finalized.services[0]?.name).toBe("app-2");
     expect(finalized.services[1]?.name).toBe("worker");
+    expect(finalized.warnings).toContain("Candidate 'app' was renamed from 'app' to 'app-2'.");
+  });
+
+  test("allows empty finalized results", () => {
+    const finalized = finalizeSelectedCandidates([]);
+
+    expect(finalized.services).toEqual([]);
+    expect(finalized.warnings).toEqual([]);
+  });
+
+  test("skips unaccepted candidate dependencies", () => {
+    const finalized = finalizeSelectedCandidates([
+      makeCandidate("worker", "worker", true, ["app"]),
+    ]);
+
+    expect(finalized.services[0]?.depends_on).toEqual([]);
+    expect(finalized.warnings).toEqual([]);
+  });
+
+  test("rejects finalized process definitions with invalid dependencies", () => {
+    expect(() =>
+      finalizeSelectedCandidates([
+        {
+          ...makeCandidate("api", "api"),
+          service: normalizeProcessDefinition({
+            name: "api",
+            command: ["bun", "run", "dev"],
+            depends_on: ["missing"],
+          }),
+        },
+      ]),
+    ).toThrow("depends on unknown service");
+  });
+
+  test("validates against existing process definitions when provided", () => {
+    const finalized = finalizeSelectedCandidates(
+      [
+        {
+          ...makeCandidate("api", "api"),
+          service: normalizeProcessDefinition({
+            name: "api",
+            command: ["bun", "run", "dev"],
+            depends_on: ["db"],
+          }),
+        },
+      ],
+      {
+        existingServices: [
+          normalizeProcessDefinition({
+            name: "db",
+            command: ["bun", "run", "db"],
+          }),
+        ],
+        usedNames: ["db"],
+      },
+    );
+
+    expect(finalized.services[0]?.depends_on).toEqual(["db"]);
   });
 });

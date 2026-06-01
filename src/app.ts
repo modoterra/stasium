@@ -342,6 +342,7 @@ const setupKeybindings = (
 
         try {
           const finalized = finalizeSelection(selection, {
+            existingServices: manager.getConfigs(),
             usedNames: manager.getConfigs().map((config) => config.name),
           });
 
