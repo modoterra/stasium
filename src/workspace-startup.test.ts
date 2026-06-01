@@ -34,6 +34,9 @@ describe("startWorkspace", () => {
         },
       });
       await session.startup;
+      expect(session.externalRuntimeManager?.getProcesses()).toEqual([externalProcess()]);
+      await session.externalRuntimeManager?.restartSelected();
+      session.externalRuntimeManager?.streamSelectedLogs();
       await session.shutdown.run();
       await session.externalRuntimeManager?.destroy();
 
@@ -42,6 +45,8 @@ describe("startWorkspace", () => {
         "mount workspace",
         "poll external runtime",
       ]);
+      expect(events).toContain("restart external process:db");
+      expect(events).toContain("stream external output:db");
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -87,8 +92,13 @@ const externalRuntime = (events: string[]): ExternalRuntime => ({
   isAvailable: (process) => process.state === "running",
   start: async () => {},
   stop: async () => {},
-  restart: async () => {},
-  streamOutput: (_name: string, _onOutput: (entry: LogEntry) => void) => null,
+  restart: async (name) => {
+    events.push(`restart external process:${name}`);
+  },
+  streamOutput: (name: string, _onOutput: (entry: LogEntry) => void) => {
+    events.push(`stream external output:${name}`);
+    return { stop: () => {} };
+  },
   destroy: async () => {},
 });
 
