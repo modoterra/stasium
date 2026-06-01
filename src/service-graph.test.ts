@@ -73,6 +73,60 @@ describe("service graph", () => {
     expect(() => validateServiceGraph(services)).toThrow(ServiceGraphError);
   });
 
+  test("validates direct-only Startup Dependencies explicitly", () => {
+    const services: ServiceConfig[] = [
+      service({
+        name: "api",
+        command: ["bun", "run", "dev"],
+        depends_on: ["cache"],
+      }),
+    ];
+
+    expect(() =>
+      validateServiceGraph(services, {
+        startupDependencyValidation: { mode: "direct-only" },
+      }),
+    ).toThrow(ServiceGraphError);
+  });
+
+  test("accepts named cross-runtime Startup Dependencies", () => {
+    const services: ServiceConfig[] = [
+      service({
+        name: "api",
+        command: ["bun", "run", "dev"],
+        depends_on: ["docker:db"],
+      }),
+    ];
+
+    expect(() =>
+      validateServiceGraph(services, {
+        startupDependencyValidation: {
+          mode: "cross-runtime",
+          externalManagedProcessNames: ["docker:db"],
+        },
+      }),
+    ).not.toThrow();
+  });
+
+  test("rejects unresolved cross-runtime Startup Dependencies", () => {
+    const services: ServiceConfig[] = [
+      service({
+        name: "api",
+        command: ["bun", "run", "dev"],
+        depends_on: ["docker:db"],
+      }),
+    ];
+
+    expect(() =>
+      validateServiceGraph(services, {
+        startupDependencyValidation: {
+          mode: "cross-runtime",
+          externalManagedProcessNames: ["docker:cache"],
+        },
+      }),
+    ).toThrow(ServiceGraphError);
+  });
+
   test("rejects dependency cycles", () => {
     const services: ServiceConfig[] = [
       service({

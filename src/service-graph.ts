@@ -1,6 +1,14 @@
 import type { ServiceConfig } from "./types";
 
+export type StartupDependencyValidationMode = "direct-only" | "cross-runtime";
+
+export interface StartupDependencyValidation {
+  mode: StartupDependencyValidationMode;
+  externalManagedProcessNames?: Iterable<string>;
+}
+
 export interface ServiceGraphOptions {
+  startupDependencyValidation?: StartupDependencyValidation;
   allowExternalDependencies?: boolean;
 }
 
@@ -12,6 +20,20 @@ export class ServiceGraphError extends Error {
 }
 
 const dependenciesOf = (service: ServiceConfig): string[] => service.depends_on;
+
+const acceptsStartupDependency = (
+  servicesByName: Map<string, ServiceConfig>,
+  dependency: string,
+  options: ServiceGraphOptions,
+): boolean => {
+  if (servicesByName.has(dependency)) return true;
+
+  const validation = options.startupDependencyValidation;
+  if (!validation) return options.allowExternalDependencies === true;
+  if (validation.mode === "direct-only") return false;
+
+  return new Set(validation.externalManagedProcessNames ?? []).has(dependency);
+};
 
 const buildServiceMap = (services: ServiceConfig[]): Map<string, ServiceConfig> => {
   const byName = new Map<string, ServiceConfig>();
@@ -74,7 +96,7 @@ export const validateServiceGraph = (
 
   for (const service of services) {
     for (const dependency of dependenciesOf(service)) {
-      if (!servicesByName.has(dependency) && !options.allowExternalDependencies) {
+      if (!acceptsStartupDependency(servicesByName, dependency, options)) {
         throw new ServiceGraphError(
           `Service "${service.name}" depends on unknown service "${dependency}"`,
         );
