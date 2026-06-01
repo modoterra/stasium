@@ -7,6 +7,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { readLiveProcessInfo } from "./process-info";
 import { cleanupExistingPids, setPidDirRootForTests, syncPidFiles } from "./pidfile";
 import { normalizeProcessDefinition } from "./process-definition";
+import { ProcessClaimStore } from "./process-claim";
 import { ServiceManager } from "./service-manager";
 
 const checksum = (value: string): string => createHash("md5").update(value).digest("hex");
@@ -166,6 +167,45 @@ describe("pidfile cleanup", () => {
         process.kill(proc.pid, "SIGKILL");
       }
       await proc.exited;
+    }
+  });
+
+  test("claiming one direct-managed process preserves other workspace claims", async () => {
+    if (process.platform === "win32") return;
+
+    const { cwd } = await createTestCwd();
+    const manager = new ServiceManager(
+      [
+        normalizeProcessDefinition({
+          name: "app",
+          command: ["bun", "-e", "setInterval(() => {}, 1000)"],
+          working_dir: cwd,
+        }),
+        normalizeProcessDefinition({
+          name: "frontend",
+          command: ["bun", "-e", "setInterval(() => {}, 1000)"],
+          working_dir: cwd,
+        }),
+      ],
+      { processClaimStore: new ProcessClaimStore(cwd) },
+    );
+
+    try {
+      await manager.startSelected();
+      const appStarted = await waitFor(() => manager.getViews()[0]?.state === "RUNNING");
+      expect(appStarted).toBe(true);
+
+      manager.setSelectedIndex(1);
+      await manager.startSelected();
+      const frontendStarted = await waitFor(() => manager.getViews()[1]?.state === "RUNNING");
+      expect(frontendStarted).toBe(true);
+
+      await delay(500);
+
+      expect(manager.getViews()[0]?.state).toBe("RUNNING");
+      expect(manager.getViews()[1]?.state).toBe("RUNNING");
+    } finally {
+      await manager.stopAll();
     }
   });
 });

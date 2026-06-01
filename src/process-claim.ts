@@ -24,7 +24,6 @@ export class ProcessClaimStore {
 
   async claimDirectManagedProcess(claim: ServicePid): Promise<void> {
     await syncPidFiles(this.cwd, [claim], {
-      knownServices: [claim.name],
       logger: this.logger,
       timeoutMs: this.timeoutMs,
     });
