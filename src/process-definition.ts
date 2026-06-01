@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 import { normalizeCommand } from "./command";
-import type { CommandSpec, RestartPolicy, ServiceConfig } from "./types";
+import type { CommandSpec, LaunchInstruction, ProcessDefinition, RestartPolicy } from "./types";
 
 export interface ProcessDefinitionInput {
   name: string;
@@ -54,18 +54,30 @@ const normalizeDependencies = (dependencies: string[] | undefined): string[] => 
   return normalized;
 };
 
+const toLaunchInstruction = (command: string[]): LaunchInstruction => ({
+  executable: command[0] ?? "",
+  arguments: command.slice(1),
+});
+
 export const normalizeProcessDefinition = (
   input: ProcessDefinitionInput,
   options: NormalizeProcessDefinitionOptions = {},
-): ServiceConfig => {
+): ProcessDefinition => {
   try {
+    const command = normalizeCommand(input.command);
+    const restartPolicy = input.restart_policy ?? "never";
+    const startupDependencies = normalizeDependencies(input.depends_on);
+
     return {
       name: normalizeName(input.name),
-      command: normalizeCommand(input.command),
+      command,
       working_dir: normalizeWorkingDir(input.working_dir, options.baseDir),
       env: normalizeEnv(input.env),
-      restart_policy: input.restart_policy ?? "never",
-      depends_on: normalizeDependencies(input.depends_on),
+      restart_policy: restartPolicy,
+      depends_on: startupDependencies,
+      launchInstruction: toLaunchInstruction(command),
+      startupDependencies,
+      restartRule: restartPolicy,
     };
   } catch (error) {
     if (error instanceof ProcessDefinitionError) throw error;
@@ -76,4 +88,4 @@ export const normalizeProcessDefinition = (
 export const normalizeProcessDefinitions = (
   inputs: ProcessDefinitionInput[],
   options: NormalizeProcessDefinitionOptions = {},
-): ServiceConfig[] => inputs.map((input) => normalizeProcessDefinition(input, options));
+): ProcessDefinition[] => inputs.map((input) => normalizeProcessDefinition(input, options));

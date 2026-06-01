@@ -4,6 +4,15 @@ export type ServiceState = "STOPPED" | "STARTING" | "RUNNING" | "FAILED" | "STOP
 
 export type CommandSpec = string | string[];
 
+export interface LaunchInstruction {
+  executable: string;
+  arguments: string[];
+}
+
+export type RestartRule = RestartPolicy;
+
+export type StartupDependency = string;
+
 export interface ServiceConfig {
   name: string;
   command: string[];
@@ -11,6 +20,12 @@ export interface ServiceConfig {
   env: Record<string, string>;
   restart_policy: RestartPolicy;
   depends_on: string[];
+}
+
+export interface ProcessDefinition extends ServiceConfig {
+  launchInstruction: LaunchInstruction;
+  startupDependencies: StartupDependency[];
+  restartRule: RestartRule;
 }
 
 export interface AppDockerConfig {
@@ -23,7 +38,7 @@ export interface AppConfig {
 
 export interface Manifest {
   app?: AppConfig;
-  services: ServiceConfig[];
+  services: ProcessDefinition[];
   path: string;
 }
 

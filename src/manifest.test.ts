@@ -132,6 +132,9 @@ describe("manifest rendering", () => {
         env: { PORT: "3000" },
         restart_policy: "never",
         depends_on: ["db"],
+        launchInstruction: { executable: "bun", arguments: ["run", "dev"] },
+        startupDependencies: ["db"],
+        restartRule: "never",
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
