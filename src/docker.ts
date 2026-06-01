@@ -5,7 +5,7 @@ import type {
   ExternalRuntimeOutputStream,
 } from "./external-runtime";
 import { fileExists } from "./shared";
-import type { DockerServiceState, ExternalManagedProcess, LogEntry } from "./types";
+import type { ExternalManagedProcess, ExternalManagedProcessState, LogEntry } from "./types";
 
 const COMPOSE_FILES = ["compose.yml", "compose.yaml", "docker-compose.yml", "docker-compose.yaml"];
 
@@ -75,7 +75,7 @@ export const detectComposeFile = async (cwd: string): Promise<string | null> => 
   return null;
 };
 
-const parseDockerState = (state: string): DockerServiceState => {
+const parseDockerState = (state: string): ExternalManagedProcessState => {
   const lower = state.toLowerCase();
   if (lower === "running") return "running";
   if (lower === "exited") return "exited";
@@ -102,9 +102,9 @@ export const getStableDockerServiceNames = (
   return names.sort((left, right) => left.localeCompare(right));
 };
 
-const pickAggregateState = (entries: DockerPsEntry[]): DockerServiceState => {
+const pickAggregateState = (entries: DockerPsEntry[]): ExternalManagedProcessState => {
   const states = entries.map((entry) => parseDockerState(entry.State ?? "unknown"));
-  const priority: DockerServiceState[] = [
+  const priority: ExternalManagedProcessState[] = [
     "running",
     "restarting",
     "paused",

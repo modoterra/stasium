@@ -461,8 +461,8 @@ const setupKeybindings = (
       case "manifest panel":
         focusManager.togglePanel("manifest");
         return;
-      case "docker panel":
-        focusManager.togglePanel("docker");
+      case "external panel":
+        focusManager.togglePanel("external");
         return;
       case "logs panel":
         focusManager.togglePanel("logs");
@@ -497,7 +497,7 @@ const setupKeybindings = (
       return;
     }
 
-    if (panel === "docker") {
+    if (panel === "external") {
       await triggerExternalRuntimeShortcut(shortcut);
     }
   };
@@ -515,7 +515,7 @@ const setupKeybindings = (
         return true;
       case "2":
         if (externalRuntimeManager) {
-          focusManager.togglePanel("docker");
+          focusManager.togglePanel("external");
           return true;
         }
         return false;
@@ -635,7 +635,7 @@ const setupKeybindings = (
         return;
       }
 
-      if (panel === "docker") {
+      if (panel === "external") {
         await handleNormalExternalRuntime(key);
         return;
       }
@@ -663,7 +663,7 @@ const mountMainUiSession = (
     manifest,
     manager,
     focusManager,
-    dockerManager: externalRuntimeManager,
+    externalRuntimeManager: externalRuntimeManager,
   });
 
   teardownRef.current = teardown;

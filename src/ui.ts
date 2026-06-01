@@ -102,8 +102,8 @@ const LOG_MIN_MESSAGE_WIDTH = 4;
 const LOG_DETAIL_PADDING_LEFT = LOG_TIMESTAMP_WIDTH + LOG_STREAM_WIDTH + LOG_ROW_GAP_X * 2;
 const MIN_LOG_PANEL_WIDTH = 56;
 const MIN_APP_WIDTH = 80;
-const MIN_APP_HEIGHT_WITH_DOCKER = 35;
-const MIN_APP_HEIGHT_NO_DOCKER = 28;
+const MIN_APP_HEIGHT_WITH_EXTERNAL_RUNTIME = 35;
+const MIN_APP_HEIGHT_NO_EXTERNAL_RUNTIME = 28;
 
 const stateColor = (state: ServiceView["state"], palette: Palette): string => {
   switch (state) {
@@ -120,7 +120,10 @@ const stateColor = (state: ServiceView["state"], palette: Palette): string => {
   }
 };
 
-const dockerStateColor = (state: ExternalManagedProcess["state"], palette: Palette): string => {
+const externalProcessStateColor = (
+  state: ExternalManagedProcess["state"],
+  palette: Palette,
+): string => {
   switch (state) {
     case "running":
       return palette.green;
@@ -139,7 +142,8 @@ const dockerStateColor = (state: ExternalManagedProcess["state"], palette: Palet
 
 const formatState = (state: ServiceView["state"]) => state.padEnd(8, " ");
 
-const formatDockerState = (state: ExternalManagedProcess["state"]) => state.padEnd(10, " ");
+const formatExternalProcessState = (state: ExternalManagedProcess["state"]) =>
+  state.padEnd(10, " ");
 
 const formatExit = (exit: number | null) => {
   if (exit === null) return "--";
@@ -183,14 +187,14 @@ const formatManifestLine = (view: ServiceView, selected: boolean, rowWidth: numb
   return `${prefix} ${status} ${name}`.slice(0, rowWidth);
 };
 
-const formatDockerLine = (
+const formatExternalProcessLine = (
   service: ExternalManagedProcess,
   selected: boolean,
   rowWidth: number,
 ): string => {
   if (rowWidth <= 0) return "";
   const prefix = selected ? ">" : " ";
-  const status = formatDockerState(service.state);
+  const status = formatExternalProcessState(service.state);
   const meta = service.ports ? `ports:${service.ports}` : service.status;
 
   const baseWidth = 2 + status.length + 1;
@@ -264,7 +268,7 @@ export interface UiOptions {
   manifest: Manifest;
   manager: ServiceManager;
   focusManager: FocusManager;
-  dockerManager: ExternalRuntimeVisibilityManager | null;
+  externalRuntimeManager: ExternalRuntimeVisibilityManager | null;
 }
 
 export interface UiControls {
@@ -301,8 +305,8 @@ export interface UiControls {
 }
 
 export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiControls } => {
-  const { renderer, manifest, manager, focusManager, dockerManager } = opts;
-  const hasDocker = dockerManager !== null;
+  const { renderer, manifest, manager, focusManager, externalRuntimeManager } = opts;
+  const hasExternalRuntime = externalRuntimeManager !== null;
   let palette = getTheme(renderer.themeMode);
 
   const root = new BoxRenderable(renderer, {
@@ -466,19 +470,19 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   });
   manifestPanel.add(manifestList);
 
-  let dockerPanel: BoxRenderable | null = null;
-  let dockerPanelTitle: TextRenderable | null = null;
-  let dockerPanelMeta: TextRenderable | null = null;
-  let dockerList: ScrollBoxRenderable | null = null;
+  let externalPanel: BoxRenderable | null = null;
+  let externalPanelTitle: TextRenderable | null = null;
+  let externalPanelMeta: TextRenderable | null = null;
+  let externalList: ScrollBoxRenderable | null = null;
 
-  if (hasDocker) {
-    const panelParts = createPanel("External", "docker");
-    dockerPanel = panelParts.panel;
-    dockerPanelTitle = panelParts.titleText;
-    dockerPanelMeta = panelParts.metaText;
+  if (hasExternalRuntime) {
+    const panelParts = createPanel("External", "external");
+    externalPanel = panelParts.panel;
+    externalPanelTitle = panelParts.titleText;
+    externalPanelMeta = panelParts.metaText;
 
-    dockerList = new ScrollBoxRenderable(renderer, {
-      id: "docker-list",
+    externalList = new ScrollBoxRenderable(renderer, {
+      id: "external-list",
       flexGrow: 1,
       scrollY: true,
       scrollX: false,
@@ -496,7 +500,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
         },
       },
     });
-    dockerPanel.add(dockerList);
+    externalPanel.add(externalList);
   }
 
   const {
@@ -535,8 +539,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   logPanel.add(logList);
 
   sideColumn.add(manifestPanel);
-  if (dockerPanel) {
-    sideColumn.add(dockerPanel);
+  if (externalPanel) {
+    sideColumn.add(externalPanel);
   }
   main.add(sideColumn);
   main.add(logPanel);
@@ -604,7 +608,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     follow: "tail",
     discover: "scan",
     "manifest panel": "manifest",
-    "docker panel": "external",
+    "external panel": "external",
     "logs panel": "logs",
     "all panels": "all",
   };
@@ -627,7 +631,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     all: 75,
     none: 75,
     "manifest panel": 60,
-    "docker panel": 60,
+    "external panel": 60,
     "logs panel": 60,
     "all panels": 65,
     "switch panel": 95,
@@ -703,8 +707,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     switch (panel) {
       case "manifest":
         return "manifest";
-      case "docker":
-        return "docker";
+      case "external":
+        return "external";
       case "logs":
         return "logs";
       default:
@@ -716,7 +720,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     if (panels.length === 0) return "none";
     if (
       panels.length === focusManager.getVisiblePanels().length &&
-      panels.length === (hasDocker ? 3 : 2)
+      panels.length === (hasExternalRuntime ? 3 : 2)
     ) {
       return "all";
     }
@@ -726,7 +730,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   const getRenderedPanels = (): PanelId[] => {
     const panels: PanelId[] = [];
     if (manifestPanel.visible) panels.push("manifest");
-    if (dockerPanel?.visible) panels.push("docker");
+    if (externalPanel?.visible) panels.push("external");
     if (logPanel.visible) panels.push("logs");
     return panels;
   };
@@ -765,8 +769,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       },
     ];
 
-    if (hasDocker && dockerManager) {
-      const externalProcesses = dockerManager.getProcesses();
+    if (hasExternalRuntime && externalRuntimeManager) {
+      const externalProcesses = externalRuntimeManager.getProcesses();
       const externalRunning = externalProcesses.filter(
         (process) => process.state === "running",
       ).length;
@@ -777,13 +781,13 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       segments.push({
         content: `${externalRunning}/${externalProcesses.length} external`,
         fg: summaryColor(externalRunning, externalProcesses.length, externalStopped),
-        panel: "docker",
+        panel: "external",
       });
 
       segments.push({
         content: `${externalStopped} stopped`,
         fg: externalStopped > 0 ? palette.red : palette.muted,
-        panel: "docker",
+        panel: "external",
       });
 
       return segments;
@@ -871,14 +875,14 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const visiblePanels = getRenderedPanels();
     const requestedPanels = focusManager.getVisiblePanels();
     const selectedManifest = manager.getSelectedView();
-    const selectedDocker = dockerManager?.getSelectedService() ?? null;
+    const selectedExternalProcess = externalRuntimeManager?.getSelectedService() ?? null;
     const activeLogName =
-      logSource === "docker"
-        ? (selectedDocker?.name ?? "external")
+      logSource === "external"
+        ? (selectedExternalProcess?.name ?? "external")
         : (selectedManifest?.name ?? "service");
     const tailState = logsFollowTail ? "tail:on" : "tail:paused";
     const manifestState = selectedManifest?.state.toLowerCase() ?? "none";
-    const dockerState = selectedDocker?.state ?? "none";
+    const externalProcessState = selectedExternalProcess?.state ?? "none";
 
     const segments = [
       { content: `layout:${formatVisiblePanels(visiblePanels)}`, fg: palette.secondary },
@@ -888,8 +892,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
         fg: selectedManifest ? stateColor(selectedManifest.state, palette) : palette.muted,
       },
       {
-        content: `external:${selectedDocker?.name ?? "-"} (${dockerState})`,
-        fg: selectedDocker ? dockerStateColor(selectedDocker.state, palette) : palette.muted,
+        content: `external:${selectedExternalProcess?.name ?? "-"} (${externalProcessState})`,
+        fg: selectedExternalProcess
+          ? externalProcessStateColor(selectedExternalProcess.state, palette)
+          : palette.muted,
       },
       {
         content: logsPanelVisible ? `logs:${activeLogName} ${tailState}` : "logs:hidden",
@@ -1300,19 +1306,19 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   renderer.root.add(root);
 
   let listLines: TextRenderable[] = [];
-  let dockerLines: TextRenderable[] = [];
+  let externalLines: TextRenderable[] = [];
   let logLines: LogRowRenderable[] = [];
-  let logSource: "manifest" | "docker" = "manifest";
+  let logSource: "manifest" | "external" = "manifest";
   let logsPanelVisible = true;
   let logsFollowTail = true;
   let lastLogVersion = -1;
   let lastSelectedIndex = -1;
-  let lastLogSource: "manifest" | "docker" = "manifest";
+  let lastLogSource: "manifest" | "external" = "manifest";
   let hoveredLogEntryKey: string | null = null;
   let selectedLogEntryKey: string | null = null;
   let expandedLogEntryKey: string | null = null;
   let hoveredManifestIndex = -1;
-  let hoveredDockerIndex = -1;
+  let hoveredExternalIndex = -1;
   let addFocusField: "name" | "command" = "name";
   let discoverySelection: DiscoverySelection | null = null;
   let discoveryWarnings: string[] = [];
@@ -1378,9 +1384,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     renderAll();
   };
 
-  const setHoveredDockerRow = (index: number): void => {
-    if (hoveredDockerIndex === index) return;
-    hoveredDockerIndex = index;
+  const setHoveredExternalRow = (index: number): void => {
+    if (hoveredExternalIndex === index) return;
+    hoveredExternalIndex = index;
     renderAll();
   };
 
@@ -1397,10 +1403,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     manager.setSelectedIndex(index);
   };
 
-  const selectDockerRow = (index: number): void => {
-    if (!isMouseInteractive() || !dockerManager) return;
-    activatePanel("docker");
-    dockerManager.selectIndex(index);
+  const selectExternalRow = (index: number): void => {
+    if (!isMouseInteractive() || !externalRuntimeManager) return;
+    activatePanel("external");
+    externalRuntimeManager.selectIndex(index);
   };
 
   const toggleLogRow = (entry: LogEntry, index: number): void => {
@@ -1416,10 +1422,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   };
 
   const getActiveLogEntries = (): LogEntry[] => {
-    const source = logSource === "docker" && dockerManager ? "docker" : "manifest";
+    const source = logSource === "external" && externalRuntimeManager ? "external" : "manifest";
     const buffer =
-      source === "docker"
-        ? (dockerManager?.getActiveLogBuffer() ?? null)
+      source === "external"
+        ? (externalRuntimeManager?.getActiveLogBuffer() ?? null)
         : (manager.getSelectedView()?.log ?? null);
     return buffer?.all() ?? [];
   };
@@ -1457,7 +1463,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   };
 
   const updateTooSmallState = (): boolean => {
-    const minHeight = hasDocker ? MIN_APP_HEIGHT_WITH_DOCKER : MIN_APP_HEIGHT_NO_DOCKER;
+    const minHeight = hasExternalRuntime
+      ? MIN_APP_HEIGHT_WITH_EXTERNAL_RUNTIME
+      : MIN_APP_HEIGHT_NO_EXTERNAL_RUNTIME;
     const tooSmall = renderer.width < MIN_APP_WIDTH || renderer.height < minHeight;
     const modalVisible =
       editOverlay.visible ||
@@ -1613,10 +1621,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   manifestList.onMouseDown = () => activatePanel("manifest");
   manifestList.onMouseOut = () => setHoveredManifestRow(-1);
 
-  if (dockerPanel && dockerList) {
-    dockerPanel.onMouseDown = () => activatePanel("docker");
-    dockerList.onMouseDown = () => activatePanel("docker");
-    dockerList.onMouseOut = () => setHoveredDockerRow(-1);
+  if (externalPanel && externalList) {
+    externalPanel.onMouseDown = () => activatePanel("external");
+    externalList.onMouseDown = () => activatePanel("external");
+    externalList.onMouseOut = () => setHoveredExternalRow(-1);
   }
 
   logPanel.onMouseDown = () => activatePanel("logs");
@@ -1729,46 +1737,48 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     ensureIndexVisible(manifestList, selectedIndex);
   };
 
-  const rebuildDockerList = () => {
-    if (!dockerManager || !dockerList || !dockerPanelMeta) return;
+  const rebuildExternalList = () => {
+    if (!externalRuntimeManager || !externalList || !externalPanelMeta) return;
 
-    const services = dockerManager.getProcesses();
-    const selectedIdx = dockerManager.getSelectedIndex();
-    dockerLines = syncRows(dockerList, dockerLines, services.length, "docker");
+    const services = externalRuntimeManager.getProcesses();
+    const selectedIdx = externalRuntimeManager.getSelectedIndex();
+    externalLines = syncRows(externalList, externalLines, services.length, "external");
 
-    const viewportWidth = Math.floor(dockerList.viewport.width);
+    const viewportWidth = Math.floor(externalList.viewport.width);
     const rowWidth = Math.max(20, viewportWidth > 0 ? viewportWidth - 1 : 44);
 
     services.forEach((service, index) => {
       const selected = index === selectedIdx;
-      const line = dockerLines[index];
+      const line = externalLines[index];
       if (!line) return;
-      line.content = formatDockerLine(service, selected, rowWidth);
-      line.fg = selected ? palette.active : dockerStateColor(service.state, palette);
-      line.bg = listRowBackground("docker", selected, index === hoveredDockerIndex);
+      line.content = formatExternalProcessLine(service, selected, rowWidth);
+      line.fg = selected ? palette.active : externalProcessStateColor(service.state, palette);
+      line.bg = listRowBackground("external", selected, index === hoveredExternalIndex);
       line.onMouseDown = (event) => {
         event.stopPropagation();
-        selectDockerRow(index);
+        selectExternalRow(index);
       };
-      line.onMouseOver = () => setHoveredDockerRow(index);
+      line.onMouseOver = () => setHoveredExternalRow(index);
       line.onMouseOut = () => {
-        if (hoveredDockerIndex === index) setHoveredDockerRow(-1);
+        if (hoveredExternalIndex === index) setHoveredExternalRow(-1);
       };
     });
 
-    dockerPanelMeta.content = `${services.filter((service) => service.state === "running").length}/${
+    externalPanelMeta.content = `${services.filter((service) => service.state === "running").length}/${
       services.length
     } running`;
-    ensureIndexVisible(dockerList, selectedIdx);
+    ensureIndexVisible(externalList, selectedIdx);
   };
 
   const rebuildLogs = () => {
-    const source = logSource === "docker" && dockerManager ? "docker" : "manifest";
+    const source = logSource === "external" && externalRuntimeManager ? "external" : "manifest";
     const selectedIndex =
-      source === "docker" ? (dockerManager?.getSelectedIndex() ?? 0) : manager.getSelectedIndex();
+      source === "external"
+        ? (externalRuntimeManager?.getSelectedIndex() ?? 0)
+        : manager.getSelectedIndex();
     const buffer =
-      source === "docker"
-        ? (dockerManager?.getActiveLogBuffer() ?? null)
+      source === "external"
+        ? (externalRuntimeManager?.getActiveLogBuffer() ?? null)
         : (manager.getSelectedView()?.log ?? null);
     const version = buffer ? buffer.getVersion() : 0;
 
@@ -1875,9 +1885,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const maxTop = getScrollBoxMaxTop(logList);
     const scroll = maxTop === 0 ? 100 : Math.round((logList.scrollTop / maxTop) * 100);
 
-    if (source === "docker") {
-      const selected = dockerManager?.getSelectedService();
-      logPanelMeta.content = `${selected?.name ?? "docker"}  lines:${entries.length}  show:${visibleStart}-${visibleEnd}  ${logsFollowTail ? "tail:on" : "tail:off"}  scroll:${scroll}%`;
+    if (source === "external") {
+      const selected = externalRuntimeManager?.getSelectedService();
+      logPanelMeta.content = `${selected?.name ?? "external"}  lines:${entries.length}  show:${visibleStart}-${visibleEnd}  ${logsFollowTail ? "tail:on" : "tail:off"}  scroll:${scroll}%`;
       return;
     }
 
@@ -1905,10 +1915,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       row.detail.bg = rowBackground;
     }
 
-    if (dockerPanel && dockerPanelTitle) {
-      dockerPanelTitle.content = "External";
-      dockerPanelTitle.fg = panelTitleColor("docker");
-      dockerPanel.backgroundColor = panelBackgroundColor("docker");
+    if (externalPanel && externalPanelTitle) {
+      externalPanelTitle.content = "External";
+      externalPanelTitle.fg = panelTitleColor("external");
+      externalPanel.backgroundColor = panelBackgroundColor("external");
     }
   };
 
@@ -1916,13 +1926,13 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const activePanel = focusManager.getActivePanel();
     if (activePanel === "manifest") {
       logSource = "manifest";
-    } else if (activePanel === "docker" && dockerManager) {
-      logSource = "docker";
+    } else if (activePanel === "external" && externalRuntimeManager) {
+      logSource = "external";
     }
 
     const views = manager.getViews();
     rebuildList(views, manager.getSelectedIndex());
-    rebuildDockerList();
+    rebuildExternalList();
     rebuildLogs();
     updateHeader();
     updatePanelStyles();
@@ -1935,12 +1945,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     updateTooSmallState();
 
     const stacked = renderer.width < 112;
-    const sideWidth = hasDocker
+    const sideWidth = hasExternalRuntime
       ? clamp(Math.floor(renderer.width * 0.34), 36, 52)
       : clamp(Math.floor(renderer.width * 0.38), 34, 58);
     const manifestPanelVisible = focusManager.isPanelVisible("manifest");
-    const dockerPanelVisible = hasDocker && focusManager.isPanelVisible("docker");
-    const sidePanelsVisible = manifestPanelVisible || dockerPanelVisible;
+    const externalPanelVisible = hasExternalRuntime && focusManager.isPanelVisible("external");
+    const sidePanelsVisible = manifestPanelVisible || externalPanelVisible;
     const logsRequested = focusManager.isPanelVisible("logs");
     const logsWidthAvailable =
       !sidePanelsVisible ||
@@ -1950,8 +1960,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const nextLogsPanelVisible = logsRequested && logsWidthAvailable;
 
     manifestPanel.visible = manifestPanelVisible;
-    if (dockerPanel) {
-      dockerPanel.visible = dockerPanelVisible;
+    if (externalPanel) {
+      externalPanel.visible = externalPanelVisible;
     }
     sideColumn.visible = sidePanelsVisible;
     logsPanelVisible = nextLogsPanelVisible;
@@ -1965,8 +1975,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       sideColumn.height = "auto";
       sideColumn.flexGrow = 0;
       manifestPanel.flexGrow = 1;
-      if (dockerPanel) {
-        dockerPanel.flexGrow = 1;
+      if (externalPanel) {
+        externalPanel.flexGrow = 1;
       }
       logPanel.flexGrow = 1;
     } else if (sidePanelsVisible && !logsPanelVisible) {
@@ -1974,21 +1984,21 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       sideColumn.width = "100%";
       sideColumn.height = "auto";
       sideColumn.flexGrow = 1;
-      manifestPanel.flexGrow = dockerPanelVisible ? 2 : 1;
-      if (dockerPanel) {
-        dockerPanel.flexGrow = 1;
+      manifestPanel.flexGrow = externalPanelVisible ? 2 : 1;
+      if (externalPanel) {
+        externalPanel.flexGrow = 1;
       }
       logPanel.flexGrow = 0;
     } else if (stacked) {
       main.flexDirection = "column";
       sideColumn.width = "100%";
-      sideColumn.height = hasDocker
+      sideColumn.height = hasExternalRuntime
         ? Math.max(12, Math.floor(renderer.height * 0.35))
         : Math.max(10, Math.floor(renderer.height * 0.28));
       sideColumn.flexGrow = 0;
       manifestPanel.flexGrow = 1;
-      if (dockerPanel) {
-        dockerPanel.flexGrow = 1;
+      if (externalPanel) {
+        externalPanel.flexGrow = 1;
       }
       logPanel.flexGrow = 1;
     } else {
@@ -1996,10 +2006,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       sideColumn.width = sideWidth;
       sideColumn.height = "auto";
       sideColumn.flexGrow = 0;
-      manifestPanel.flexGrow = dockerPanelVisible ? 2 : 1;
+      manifestPanel.flexGrow = externalPanelVisible ? 2 : 1;
 
-      if (dockerPanel) {
-        dockerPanel.flexGrow = 1;
+      if (externalPanel) {
+        externalPanel.flexGrow = 1;
       }
 
       logPanel.flexGrow = 1;
@@ -2035,10 +2045,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       },
     };
 
-    if (dockerPanel && dockerPanelMeta && dockerList) {
-      dockerPanel.backgroundColor = panelBackgroundColor("docker");
-      dockerPanelMeta.fg = palette.muted;
-      dockerList.verticalScrollbarOptions = {
+    if (externalPanel && externalPanelMeta && externalList) {
+      externalPanel.backgroundColor = panelBackgroundColor("external");
+      externalPanelMeta.fg = palette.muted;
+      externalList.verticalScrollbarOptions = {
         trackOptions: {
           backgroundColor: palette.element,
           foregroundColor: palette.border,
@@ -2113,7 +2123,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   const unsubManager = manager.onUpdate(renderAll);
   const unsubFocus = focusManager.onUpdate(applyLayout);
-  const unsubDocker = dockerManager ? dockerManager.onUpdate(renderAll) : () => {};
+  const unsubscribeExternalRuntime = externalRuntimeManager
+    ? externalRuntimeManager.onUpdate(renderAll)
+    : () => {};
 
   const controls: UiControls = {
     setShortcutHandler(handler) {
@@ -2334,9 +2346,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     },
 
     clearLogs() {
-      const source = logSource === "docker" && dockerManager ? "docker" : "manifest";
-      if (source === "docker") {
-        const buffer = dockerManager?.getSelectedLogBuffer() ?? null;
+      const source = logSource === "external" && externalRuntimeManager ? "external" : "manifest";
+      if (source === "external") {
+        const buffer = externalRuntimeManager?.getSelectedLogBuffer() ?? null;
         if (buffer) {
           buffer.clear();
           resetLogInteraction();
@@ -2369,7 +2381,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     renderer.off("resize", applyLayout);
     unsubManager();
     unsubFocus();
-    unsubDocker();
+    unsubscribeExternalRuntime();
     unsubDiscoverySelection?.();
     root.destroy();
   };

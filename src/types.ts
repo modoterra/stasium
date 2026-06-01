@@ -59,9 +59,9 @@ export interface ServicePid {
   identityVerified: boolean;
 }
 
-export type PanelId = "manifest" | "logs" | "docker";
+export type PanelId = "manifest" | "logs" | "external";
 
-export type DockerServiceState =
+export type ExternalManagedProcessState =
   | "running"
   | "exited"
   | "paused"
@@ -70,15 +70,6 @@ export type DockerServiceState =
   | "created"
   | "removing"
   | "unknown";
-
-export interface DockerService {
-  name: string;
-  state: DockerServiceState;
-  status: string;
-  ports: string;
-}
-
-export type ExternalManagedProcessState = DockerServiceState;
 
 export interface ExternalManagedProcess {
   runtimeId: string;
