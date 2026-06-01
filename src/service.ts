@@ -1,7 +1,6 @@
 import { readLiveProcessInfo, resolveRuntimeWorkingDir } from "./process-info";
-import { normalizeCommand } from "./command";
 import { getErrorMessage } from "./shared";
-import type { CommandSpec, LogEntry, ServiceConfig, ServicePid, ServiceState } from "./types";
+import type { LogEntry, ServiceConfig, ServicePid, ServiceState } from "./types";
 
 export type ServiceEvent =
   | { type: "state"; state: ServiceState }
@@ -156,26 +155,14 @@ export class ServiceProcess {
     this.identityVerified = false;
     this.setState("STARTING");
 
-    let argv: string[];
-    try {
-      argv = normalizeCommand(this.config.command as CommandSpec);
-      this.command = [...argv];
-    } catch (error) {
-      this.lastExitCode = 1;
-      this.lastSignal = null;
-      this.setState("FAILED");
-      this.emit({
-        type: "log",
-        entry: { timestamp: timestamp(), line: getErrorMessage(error), stream: "stderr" },
-      });
-      return;
-    }
+    const argv = this.config.command;
+    this.command = [...argv];
 
     try {
-      const env = await buildSpawnEnv(this.config.working_dir, this.config.env);
+      const env = await buildSpawnEnv(this.workingDir, this.config.env);
       this.process = Bun.spawn({
         cmd: argv,
-        cwd: this.config.working_dir,
+        cwd: this.workingDir,
         env,
         detached: this.detached,
         stdout: "pipe",

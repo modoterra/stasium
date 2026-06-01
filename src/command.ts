@@ -1,4 +1,3 @@
-import { ManifestError } from "./manifest";
 import type { CommandSpec } from "./types";
 
 const tokenize = (input: string): string[] => {
@@ -36,7 +35,7 @@ const tokenize = (input: string): string[] => {
   }
 
   if (inSingle || inDouble) {
-    throw new ManifestError("command has unclosed quotes");
+    throw new Error("command has unclosed quotes");
   }
 
   if (current.length > 0) {
@@ -51,27 +50,27 @@ const forbiddenOperators = ["|", "&", ";", ">", "<", "`", "$"];
 const assertNoShellOperators = (argv: string[], raw: string) => {
   for (const op of forbiddenOperators) {
     if (raw.includes(op)) {
-      throw new ManifestError(
+      throw new Error(
         `command contains shell operator '${op}'. Use an argv array instead of shell syntax.`,
       );
     }
   }
   if (argv.length === 0) {
-    throw new ManifestError("command must not be empty");
+    throw new Error("command must not be empty");
   }
 };
 
 export const normalizeCommand = (command: CommandSpec): string[] => {
   if (Array.isArray(command)) {
     if (command.length === 0) {
-      throw new ManifestError("command array must not be empty");
+      throw new Error("command array must not be empty");
     }
     return command;
   }
 
   const raw = command.trim();
   if (raw.length === 0) {
-    throw new ManifestError("command must not be empty");
+    throw new Error("command must not be empty");
   }
 
   const tokens = tokenize(raw);

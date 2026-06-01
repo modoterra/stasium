@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
+import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
 import { ServiceManager, ServiceManagerError } from "./service-manager";
 import type { ServiceConfig } from "./types";
 
-const makeConfig = (name: string): ServiceConfig => ({
-  name,
-  command: ["bun", "--version"],
-});
+const service = (input: ProcessDefinitionInput): ServiceConfig => normalizeProcessDefinition(input);
+
+const makeConfig = (name: string): ServiceConfig =>
+  service({
+    name,
+    command: ["bun", "--version"],
+  });
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -47,15 +51,15 @@ describe("ServiceManager", () => {
 
   test("starts dependencies before selected service", async () => {
     const manager = new ServiceManager([
-      {
+      service({
         name: "db",
         command: ["bun", "-e", "setTimeout(() => process.exit(0), 400)"],
-      },
-      {
+      }),
+      service({
         name: "api",
         command: ["bun", "-e", "setTimeout(() => process.exit(0), 400)"],
         depends_on: ["db"],
-      },
+      }),
     ]);
 
     manager.setSelectedIndex(1);
@@ -70,15 +74,15 @@ describe("ServiceManager", () => {
 
   test("stops selected dependency and its dependents", async () => {
     const manager = new ServiceManager([
-      {
+      service({
         name: "db",
         command: ["bun", "-e", "setInterval(() => {}, 1000)"],
-      },
-      {
+      }),
+      service({
         name: "api",
         command: ["bun", "-e", "setInterval(() => {}, 1000)"],
         depends_on: ["db"],
-      },
+      }),
     ]);
 
     await manager.startAll();
@@ -100,10 +104,10 @@ describe("ServiceManager", () => {
     ].join(" ");
 
     const manager = new ServiceManager([
-      {
+      service({
         name: "stubborn",
         command: ["bun", "-e", stubbornScript],
-      },
+      }),
     ]);
 
     await manager.startAll();
@@ -119,16 +123,16 @@ describe("ServiceManager", () => {
   test("stops child processes spawned by services", async () => {
     const childScript = "setInterval(() => {}, 1000);";
     const parentScript = [
-      `const child = Bun.spawn({ cmd: [\"bun\", \"-e\", ${JSON.stringify(childScript)}], stdout: \"ignore\", stderr: \"ignore\" });`,
+      `const child = Bun.spawn({ cmd: ["bun", "-e", ${JSON.stringify(childScript)}], stdout: "ignore", stderr: "ignore" });`,
       "console.log(`child:${child.pid}`);",
       "setInterval(() => {}, 1000);",
     ].join(" ");
 
     const manager = new ServiceManager([
-      {
+      service({
         name: "tree",
         command: ["bun", "-e", parentScript],
-      },
+      }),
     ]);
 
     let childPid: number | null = null;
@@ -172,11 +176,11 @@ describe("ServiceManager", () => {
 
   test("restarts failed services with on-failure policy", async () => {
     const manager = new ServiceManager([
-      {
+      service({
         name: "failing",
         command: ["bun", "-e", "process.exit(1)"],
         restart_policy: "on-failure",
-      },
+      }),
     ]);
 
     await manager.startAll();

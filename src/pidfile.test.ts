@@ -6,6 +6,7 @@ import { resolve } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { readLiveProcessInfo } from "./process-info";
 import { cleanupExistingPids, setPidDirRootForTests, syncPidFiles } from "./pidfile";
+import { normalizeProcessDefinition } from "./process-definition";
 import { ServiceManager } from "./service-manager";
 
 const checksum = (value: string): string => createHash("md5").update(value).digest("hex");
@@ -70,10 +71,10 @@ describe("pidfile cleanup", () => {
 
     const { cwd, pidDir } = await createTestCwd();
     const manager = new ServiceManager([
-      {
+      normalizeProcessDefinition({
         name: "api",
         command: ["bun", "-e", "setInterval(() => {}, 1000)"],
-      },
+      }),
     ]);
 
     try {

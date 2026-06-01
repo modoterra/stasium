@@ -1,7 +1,13 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import {
+  ProcessDefinitionError,
+  normalizeProcessDefinition,
+  normalizeProcessDefinitions,
+  type ProcessDefinitionInput,
+} from "./process-definition";
 import { ServiceGraphError, validateServiceGraph } from "./service-graph";
 import { getErrorMessage } from "./shared";
-import type { AppConfig, AppDockerConfig, Manifest, ServiceConfig } from "./types";
+import type { AppConfig, AppDockerConfig, CommandSpec, Manifest, ServiceConfig } from "./types";
 
 type RawManifest = {
   app?: {
@@ -9,7 +15,16 @@ type RawManifest = {
       enabled?: boolean;
     };
   };
-  service?: ServiceConfig[];
+  service?: RawServiceConfig[];
+};
+
+type RawServiceConfig = {
+  name?: unknown;
+  command?: unknown;
+  working_dir?: unknown;
+  env?: unknown;
+  restart_policy?: unknown;
+  depends_on?: unknown;
 };
 
 const DEFAULT_MANIFEST = "stasium.toml";
@@ -34,7 +49,7 @@ const validRestartPolicies = new Set(["never", "on-failure", "always"]);
 const validAppKeys = new Set(["docker"]);
 const validDockerKeys = new Set(["enabled"]);
 
-const normalizeEnv = (env: unknown): Record<string, string> | undefined => {
+const coerceEnv = (env: unknown): Record<string, string> | undefined => {
   if (env === undefined) return undefined;
   if (env === null || typeof env !== "object" || Array.isArray(env)) {
     throw new ManifestError("service.env must be a table of string values");
@@ -97,7 +112,7 @@ const normalizeApp = (app: unknown): AppConfig | undefined => {
   return { docker };
 };
 
-const normalizeService = (raw: ServiceConfig, index: number): ServiceConfig => {
+const toProcessDefinitionInput = (raw: RawServiceConfig, index: number): ProcessDefinitionInput => {
   if (!raw || typeof raw !== "object") {
     throw new ManifestError(`service[${index}] must be a table`);
   }
@@ -107,11 +122,11 @@ const normalizeService = (raw: ServiceConfig, index: number): ServiceConfig => {
     throw new ManifestError(`service[${index}] has unknown keys: ${unknownKeys.join(", ")}`);
   }
 
-  if (!raw.name || typeof raw.name !== "string") {
+  if (typeof raw.name !== "string") {
     throw new ManifestError(`service[${index}].name must be a string`);
   }
 
-  if (!raw.command || (typeof raw.command !== "string" && !Array.isArray(raw.command))) {
+  if (typeof raw.command !== "string" && !Array.isArray(raw.command)) {
     throw new ManifestError(`service[${index}].command must be string or string[]`);
   }
 
@@ -137,16 +152,23 @@ const normalizeService = (raw: ServiceConfig, index: number): ServiceConfig => {
     }
   }
 
-  const env = normalizeEnv(raw.env);
+  const env = coerceEnv(raw.env);
 
   return {
     name: raw.name,
-    command: raw.command,
+    command: raw.command as CommandSpec,
     working_dir: raw.working_dir,
     env,
-    restart_policy: raw.restart_policy,
+    restart_policy: raw.restart_policy as ProcessDefinitionInput["restart_policy"],
     depends_on: raw.depends_on,
   };
+};
+
+const toManifestError = (error: unknown): never => {
+  if (error instanceof ProcessDefinitionError || error instanceof ServiceGraphError) {
+    throw new ManifestError(error.message);
+  }
+  throw error;
 };
 
 export const loadManifest = async (path?: string): Promise<Manifest> => {
@@ -170,15 +192,20 @@ export const loadManifest = async (path?: string): Promise<Manifest> => {
   }
 
   const app = normalizeApp(parsed.app);
-  const normalized = services.map((service, index) => normalizeService(service, index));
+  const inputs = services.map((service, index) => toProcessDefinitionInput(service, index));
+  const normalized = ((): ServiceConfig[] => {
+    try {
+      return normalizeProcessDefinitions(inputs, { baseDir: dirname(resolve(manifestPath)) });
+    } catch (error) {
+      toManifestError(error);
+    }
+    throw new ManifestError("Invalid Process Definition");
+  })();
 
   try {
     validateServiceGraph(normalized);
   } catch (error) {
-    if (error instanceof ServiceGraphError) {
-      throw new ManifestError(error.message);
-    }
-    throw error;
+    toManifestError(error);
   }
 
   return {
@@ -210,11 +237,11 @@ const renderServiceToml = (service: ServiceConfig): string => {
   if (service.restart_policy) {
     lines.push(`restart_policy = "${service.restart_policy}"`);
   }
-  if (service.depends_on && service.depends_on.length > 0) {
+  if (service.depends_on.length > 0) {
     const deps = service.depends_on.map((d) => `"${escapeToml(d)}"`).join(", ");
     lines.push(`depends_on = [${deps}]`);
   }
-  if (service.env && Object.keys(service.env).length > 0) {
+  if (Object.keys(service.env).length > 0) {
     lines.push("[service.env]");
     for (const [key, value] of Object.entries(service.env)) {
       lines.push(`"${escapeToml(key)}" = "${escapeToml(value)}"`);
@@ -257,7 +284,7 @@ export const renderServiceBlock = (service: ServiceConfig): string => {
   return renderServiceToml(service);
 };
 
-export const parseServiceBlock = (toml: string): ServiceConfig => {
+export const parseServiceBlock = (toml: string, baseDir?: string): ServiceConfig => {
   let parsed: RawManifest;
   try {
     parsed = Bun.TOML.parse(toml) as RawManifest;
@@ -275,7 +302,12 @@ export const parseServiceBlock = (toml: string): ServiceConfig => {
     throw new ManifestError("Expected exactly one [[service]] block");
   }
 
-  return normalizeService(raw, 0);
+  try {
+    return normalizeProcessDefinition(toProcessDefinitionInput(raw, 0), { baseDir });
+  } catch (error) {
+    toManifestError(error);
+  }
+  throw new ManifestError("Invalid service block");
 };
 
 export const saveManifest = async (

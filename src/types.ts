@@ -6,11 +6,11 @@ export type CommandSpec = string | string[];
 
 export interface ServiceConfig {
   name: string;
-  command: CommandSpec;
-  working_dir?: string;
-  env?: Record<string, string>;
-  restart_policy?: RestartPolicy;
-  depends_on?: string[];
+  command: string[];
+  working_dir: string;
+  env: Record<string, string>;
+  restart_policy: RestartPolicy;
+  depends_on: string[];
 }
 
 export interface AppDockerConfig {

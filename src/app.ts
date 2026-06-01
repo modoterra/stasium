@@ -1,4 +1,4 @@
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { type KeyEvent, createCliRenderer } from "@opentui/core";
 import { DockerManager, detectComposeFile } from "./docker";
 import { FocusManager } from "./focus";
@@ -11,6 +11,7 @@ import {
 } from "./init";
 import { loadManifest, parseServiceBlock, renderServiceBlock, saveManifest } from "./manifest";
 import { cleanupExistingPids, syncPidFiles } from "./pidfile";
+import { normalizeProcessDefinition } from "./process-definition";
 import { getTopologicalServiceOrder } from "./service-graph";
 import { ServiceManager } from "./service-manager";
 import { fileExists, getErrorMessage } from "./shared";
@@ -248,7 +249,7 @@ const setupKeybindings = (
       controls.clearEditError();
       const toml = controls.getEditContent();
       try {
-        const config = parseServiceBlock(toml);
+        const config = parseServiceBlock(toml, dirname(manifestPath));
         const index = manager.getSelectedIndex();
         await manager.updateServiceConfig(index, config);
         await saveManifest(manifestPath, manager.getConfigs(), appConfig);
@@ -280,7 +281,9 @@ const setupKeybindings = (
       }
 
       try {
-        await manager.addService({ name, command });
+        await manager.addService(
+          normalizeProcessDefinition({ name, command }, { baseDir: dirname(manifestPath) }),
+        );
         await saveManifest(manifestPath, manager.getConfigs(), appConfig);
         await syncPids();
         controls.hideAddOverlay();

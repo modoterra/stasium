@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
 import {
   ServiceGraphError,
   getDependencyClosure,
@@ -9,21 +10,23 @@ import {
 } from "./service-graph";
 import type { ServiceConfig } from "./types";
 
+const service = (input: ProcessDefinitionInput): ServiceConfig => normalizeProcessDefinition(input);
+
 const baseServices: ServiceConfig[] = [
-  {
+  service({
     name: "api",
     command: ["bun", "run", "dev"],
     depends_on: ["db"],
-  },
-  {
+  }),
+  service({
     name: "db",
     command: ["docker", "compose", "up", "db"],
-  },
-  {
+  }),
+  service({
     name: "worker",
     command: ["bun", "run", "worker"],
     depends_on: ["api"],
-  },
+  }),
 ];
 
 describe("service graph", () => {
@@ -35,9 +38,9 @@ describe("service graph", () => {
     expect(getTopologicalServiceLayers(baseServices)).toEqual([["db"], ["api"], ["worker"]]);
     expect(
       getTopologicalServiceLayers([
-        { name: "db", command: ["bun", "--version"] },
-        { name: "cache", command: ["bun", "--version"] },
-        { name: "api", command: ["bun", "--version"], depends_on: ["db", "cache"] },
+        service({ name: "db", command: ["bun", "--version"] }),
+        service({ name: "cache", command: ["bun", "--version"] }),
+        service({ name: "api", command: ["bun", "--version"], depends_on: ["db", "cache"] }),
       ]),
     ).toEqual([["db", "cache"], ["api"]]);
   });
@@ -60,11 +63,11 @@ describe("service graph", () => {
 
   test("rejects unknown dependencies", () => {
     const services: ServiceConfig[] = [
-      {
+      service({
         name: "api",
         command: ["bun", "run", "dev"],
         depends_on: ["cache"],
-      },
+      }),
     ];
 
     expect(() => validateServiceGraph(services)).toThrow(ServiceGraphError);
@@ -72,16 +75,16 @@ describe("service graph", () => {
 
   test("rejects dependency cycles", () => {
     const services: ServiceConfig[] = [
-      {
+      service({
         name: "api",
         command: ["bun", "run", "dev"],
         depends_on: ["worker"],
-      },
-      {
+      }),
+      service({
         name: "worker",
         command: ["bun", "run", "worker"],
         depends_on: ["api"],
-      },
+      }),
     ];
 
     expect(() => validateServiceGraph(services)).toThrow(ServiceGraphError);

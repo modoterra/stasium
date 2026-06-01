@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { normalizeProcessDefinition } from "./process-definition";
 import { setPathReaderForTests, resetPathCacheForTests } from "./service";
 import { ServiceManager } from "./service-manager";
 
@@ -28,14 +29,14 @@ describe("service PATH cache", () => {
     });
 
     const manager = new ServiceManager([
-      {
+      normalizeProcessDefinition({
         name: "api",
         command: ["bun", "-e", "setInterval(() => {}, 1000)"],
-      },
-      {
+      }),
+      normalizeProcessDefinition({
         name: "worker",
         command: ["bun", "-e", "setInterval(() => {}, 1000)"],
-      },
+      }),
     ]);
 
     try {

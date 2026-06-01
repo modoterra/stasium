@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { detectDiscoveryCandidates } from "./engine";
 import { loadDiscoveryStrategies } from "./strategy-loader";
 import type { DiscoveryStrategy, StrategyWhen } from "./types";
@@ -67,6 +67,10 @@ describe("discovery engine", () => {
       expect(detected.warnings).toHaveLength(0);
       expect(detected.candidates).toHaveLength(1);
       expect(detected.candidates[0]?.service.command).toEqual(["bun", "run", "vite"]);
+      expect(detected.candidates[0]?.service.working_dir).toBe(resolve(dir));
+      expect(detected.candidates[0]?.service.env).toEqual({});
+      expect(detected.candidates[0]?.service.restart_policy).toBe("never");
+      expect(detected.candidates[0]?.service.depends_on).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -7,7 +7,7 @@ export class ServiceGraphError extends Error {
   }
 }
 
-const dependenciesOf = (service: ServiceConfig): string[] => service.depends_on ?? [];
+const dependenciesOf = (service: ServiceConfig): string[] => service.depends_on;
 
 const buildServiceMap = (services: ServiceConfig[]): Map<string, ServiceConfig> => {
   const byName = new Map<string, ServiceConfig>();

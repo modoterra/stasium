@@ -1,17 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { ManifestError, loadManifest, renderManifest } from "./manifest";
-import type { AppConfig, ServiceConfig } from "./types";
+import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
+import type { AppConfig } from "./types";
 
 const writeTempManifest = async (
-  services: ServiceConfig[],
+  services: ProcessDefinitionInput[],
   app?: AppConfig,
 ): Promise<{ manifestPath: string; dir: string }> => {
   const dir = await mkdtemp(join(tmpdir(), "stasium-manifest-"));
   const manifestPath = join(dir, "stasium.toml");
-  await Bun.write(manifestPath, renderManifest(services, app));
+  await Bun.write(
+    manifestPath,
+    renderManifest(
+      services.map((service) => normalizeProcessDefinition(service, { baseDir: dir })),
+      app,
+    ),
+  );
   return { manifestPath, dir };
 };
 
@@ -82,6 +89,85 @@ describe("manifest rendering", () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-manifest-"));
     const manifestPath = join(dir, "stasium.toml");
     await Bun.write(manifestPath, ["[app.docker]", 'enabled = "no"'].join("\n"));
+
+    try {
+      await expect(loadManifest(manifestPath)).rejects.toThrow(ManifestError);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("loads normalized process definitions", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-manifest-"));
+    const manifestPath = join(dir, "stasium.toml");
+    await Bun.write(
+      manifestPath,
+      [
+        "[[service]]",
+        'name = " db "',
+        'command = ["bun", "--version"]',
+        "",
+        "[[service]]",
+        'name = " api "',
+        'command = "bun run dev"',
+        'working_dir = "app"',
+        'depends_on = [" db "]',
+        "[service.env]",
+        "PORT = 3000",
+      ].join("\n"),
+    );
+
+    try {
+      const manifest = await loadManifest(manifestPath);
+      expect(manifest.services[0]).toMatchObject({
+        name: "db",
+        env: {},
+        restart_policy: "never",
+        depends_on: [],
+      });
+      expect(manifest.services[1]).toEqual({
+        name: "api",
+        command: ["bun", "run", "dev"],
+        working_dir: resolve(dir, "app"),
+        env: { PORT: "3000" },
+        restart_policy: "never",
+        depends_on: ["db"],
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects duplicate names after trimming", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-manifest-"));
+    const manifestPath = join(dir, "stasium.toml");
+    await Bun.write(
+      manifestPath,
+      [
+        "[[service]]",
+        'name = "api"',
+        'command = ["bun", "--version"]',
+        "",
+        "[[service]]",
+        'name = " api "',
+        'command = ["bun", "--version"]',
+      ].join("\n"),
+    );
+
+    try {
+      await expect(loadManifest(manifestPath)).rejects.toThrow(ManifestError);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("rejects shell-style launch instructions during loading", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-manifest-"));
+    const manifestPath = join(dir, "stasium.toml");
+    await Bun.write(
+      manifestPath,
+      ["[[service]]", 'name = "api"', 'command = "bun run dev && bun run worker"'].join("\n"),
+    );
 
     try {
       await expect(loadManifest(manifestPath)).rejects.toThrow(ManifestError);

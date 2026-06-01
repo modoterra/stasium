@@ -1,4 +1,5 @@
-import type { ServiceConfig } from "../types";
+import { normalizeProcessDefinition, type ProcessDefinitionInput } from "../process-definition";
+import type { CommandSpec, ServiceConfig } from "../types";
 import { resolveStrategyCaptures } from "./captures";
 import { DiscoveryProbeContext } from "./probes";
 import type { DetectResult, DetectedCandidate, DiscoveryStrategy, StrategyWhen } from "./types";
@@ -95,6 +96,7 @@ type ServiceBuildResult = {
 const buildCandidateService = (
   strategy: DiscoveryStrategy,
   captures: Record<string, string>,
+  cwd: string,
 ): ServiceBuildResult => {
   const renderedName = interpolate(strategy.service.name, captures);
   if (!renderedName || renderedName.trim().length === 0) {
@@ -105,7 +107,7 @@ const buildCandidateService = (
     };
   }
 
-  let renderedCommand: ServiceConfig["command"];
+  let renderedCommand: CommandSpec;
   if (Array.isArray(strategy.service.command)) {
     const parts: string[] = [];
     for (const part of strategy.service.command) {
@@ -177,7 +179,7 @@ const buildCandidateService = (
     }
   }
 
-  const service: ServiceConfig = {
+  const input: ProcessDefinitionInput = {
     name: renderedName,
     command: renderedCommand,
     working_dir: renderedWorkingDir,
@@ -186,11 +188,19 @@ const buildCandidateService = (
     depends_on: renderedDependsOn,
   };
 
-  return {
-    service,
-    dependsOnIds: strategy.service.depends_on_ids ?? [],
-    error: null,
-  };
+  try {
+    return {
+      service: normalizeProcessDefinition(input, { baseDir: cwd }),
+      dependsOnIds: strategy.service.depends_on_ids ?? [],
+      error: null,
+    };
+  } catch (error) {
+    return {
+      service: null,
+      dependsOnIds: [],
+      error: `Strategy '${strategy.id}' produced an invalid Process Definition: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
 };
 
 const toCandidate = (
@@ -226,7 +236,7 @@ export const detectDiscoveryCandidates = async (
       continue;
     }
 
-    const serviceResult = buildCandidateService(strategy, captureResolution.values);
+    const serviceResult = buildCandidateService(strategy, captureResolution.values, cwd);
     if (serviceResult.error || serviceResult.service === null) {
       if (serviceResult.error) {
         warnings.push(serviceResult.error);

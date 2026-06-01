@@ -10,11 +10,11 @@ interface FinalizeSelectionOptions {
 const cloneService = (service: ServiceConfig): ServiceConfig => {
   return {
     name: service.name,
-    command: Array.isArray(service.command) ? [...service.command] : service.command,
+    command: [...service.command],
     working_dir: service.working_dir,
-    env: service.env ? { ...service.env } : undefined,
+    env: { ...service.env },
     restart_policy: service.restart_policy,
-    depends_on: service.depends_on ? [...service.depends_on] : undefined,
+    depends_on: [...service.depends_on],
   };
 };
 
@@ -134,7 +134,7 @@ export const finalizeSelectedCandidates = (
     const service = services[index];
     if (!service) return;
 
-    const resolved = [...(service.depends_on ?? [])];
+    const resolved = [...service.depends_on];
     const seen = new Set(resolved);
 
     for (const dependencyId of candidate.dependsOnIds) {
@@ -155,7 +155,7 @@ export const finalizeSelectedCandidates = (
       seen.add(dependencyName);
     }
 
-    service.depends_on = resolved.length > 0 ? resolved : undefined;
+    service.depends_on = resolved;
   });
 
   return {

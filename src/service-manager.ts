@@ -510,7 +510,7 @@ export class ServiceManager {
       return;
     }
 
-    const policy = view.config.restart_policy ?? "never";
+    const policy = view.config.restart_policy;
     if (policy === "never") return;
     if (policy === "on-failure" && exitCode === 0) return;
 

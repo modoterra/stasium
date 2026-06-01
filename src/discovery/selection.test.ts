@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { normalizeProcessDefinition } from "../process-definition";
 import { DiscoverySelection, finalizeSelectedCandidates, finalizeSelection } from "./selection";
 import type { DetectedCandidate } from "./types";
 
@@ -13,10 +14,10 @@ const makeCandidate = (
   priority: 100,
   defaultSelected,
   dependsOnIds,
-  service: {
+  service: normalizeProcessDefinition({
     name,
     command: ["bun", "run", "dev"],
-  },
+  }),
 });
 
 describe("discovery selection", () => {
