@@ -3,6 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
+import { ExternalRuntimeVisibilityManager, type ExternalRuntime } from "./external-runtime";
 import {
   addProcessDefinition,
   removeSelectedProcessDefinition,
@@ -12,6 +13,7 @@ import { loadManifest, renderServiceBlock, saveManifest } from "./manifest";
 import { normalizeProcessDefinition } from "./process-definition";
 import { ProcessClaimStore } from "./process-claim";
 import { ServiceManager } from "./service-manager";
+import type { ExternalManagedProcess } from "./types";
 
 const launchPid = (pid: number): LaunchInstructionExecutionAdapter =>
   new LaunchInstructionExecutionAdapter({
@@ -45,6 +47,26 @@ class FailingReleaseClaims extends TestClaims {
     throw new Error("release failed");
   }
 }
+
+const externalProcess = (name = "db"): ExternalManagedProcess => ({
+  runtimeId: "docker",
+  runtimeName: "Docker Compose",
+  name,
+  state: "running",
+  status: "running",
+  ports: "",
+});
+
+const externalRuntime = (processes: ExternalManagedProcess[]): ExternalRuntime => ({
+  id: "docker",
+  name: "Docker Compose",
+  snapshot: async () => processes,
+  isAvailable: () => true,
+  stop: async () => {},
+  restart: async () => {},
+  streamOutput: () => null,
+  destroy: async () => {},
+});
 
 describe("Manifest Editing", () => {
   test("adds a Process Definition through one persisted runtime apply flow", async () => {
@@ -90,6 +112,40 @@ describe("Manifest Editing", () => {
       const manifest = await loadManifest(manifestPath);
       expect(manifest.services).toEqual([]);
       expect(manager.getConfigs()).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("accepts a Startup Dependency visible through External Runtime Visibility", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
+    const manifestPath = join(dir, "stasium.toml");
+    try {
+      await saveManifest(manifestPath, []);
+      const claims = new TestClaims(dir);
+      const externalRuntimeManager = new ExternalRuntimeVisibilityManager([
+        externalRuntime([externalProcess()]),
+      ]);
+      await externalRuntimeManager.refresh();
+      const manager = new ServiceManager([], {
+        processClaimStore: claims,
+        externalRuntimeManager,
+      });
+
+      await addProcessDefinition(
+        { manifestPath, manager, processClaimStore: claims, externalRuntimeManager },
+        {
+          name: "api",
+          launchInstruction: "bun run dev",
+          startupDependencies: ["docker:db"],
+        },
+      );
+
+      const manifest = await loadManifest(manifestPath, {
+        externalManagedProcessNames: ["docker:db"],
+      });
+      expect(manager.getConfigs()[0]?.startupDependencies).toEqual(["docker:db"]);
+      expect(manifest.services[0]?.startupDependencies).toEqual(["docker:db"]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

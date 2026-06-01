@@ -1,8 +1,11 @@
 import { getDependencyClosure, getDependentsClosure } from "./service-graph";
-import { planStartupDependencies } from "./startup-dependency-plan";
+import {
+  planStartupDependencies,
+  type StartupDependencyPlanOptions,
+} from "./startup-dependency-plan";
 import type { ProcessDefinition } from "./types";
 
-export interface DirectManagedProcessCollectionLifecycleOptions {
+export interface DirectManagedProcessCollectionLifecycleOptions extends StartupDependencyPlanOptions {
   allowExternalDependencies?: boolean;
 }
 

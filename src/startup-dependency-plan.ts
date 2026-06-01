@@ -1,5 +1,6 @@
 import {
   ServiceGraphError,
+  type ServiceGraphOptions,
   getTopologicalServiceLayers,
   getTopologicalServiceOrder,
   validateServiceGraph,
@@ -21,7 +22,7 @@ export interface StartupDependencyPlan {
   blockedStatesFor: (unavailableNames: Iterable<string>) => BlockedProcessState[];
 }
 
-export interface StartupDependencyPlanOptions {
+export interface StartupDependencyPlanOptions extends ServiceGraphOptions {
   allowExternalDependencies?: boolean;
 }
 

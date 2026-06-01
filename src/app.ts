@@ -233,7 +233,7 @@ const setupKeybindings = (
       const toml = controls.getEditContent();
       try {
         await replaceProcessDefinition(
-          { manifestPath, appConfig, manager, processClaimStore },
+          { manifestPath, appConfig, manager, processClaimStore, externalRuntimeManager },
           manager.getSelectedIndex(),
           toml,
         );
@@ -265,7 +265,7 @@ const setupKeybindings = (
 
       try {
         await addProcessDefinition(
-          { manifestPath, appConfig, manager, processClaimStore },
+          { manifestPath, appConfig, manager, processClaimStore, externalRuntimeManager },
           { name, launchInstruction: command },
         );
         controls.hideAddOverlay();
@@ -325,7 +325,7 @@ const setupKeybindings = (
         try {
           const previousCount = manager.getConfigs().length;
           const result = await addSelectedDiscoveryCandidates(
-            { manifestPath, appConfig, manager, processClaimStore },
+            { manifestPath, appConfig, manager, processClaimStore, externalRuntimeManager },
             selection,
           );
 
@@ -358,6 +358,7 @@ const setupKeybindings = (
         appConfig,
         manager,
         processClaimStore,
+        externalRuntimeManager,
       });
       deleteConfirming = false;
       controls.hideDeleteConfirm();
