@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
 import { ServiceManager, ServiceManagerError } from "./service-manager";
 import type { ServiceConfig } from "./types";
@@ -203,5 +204,70 @@ describe("ServiceManager", () => {
     await delay(500);
     const afterStopRestartCount = manager.getSelectedView()?.restartCount ?? 0;
     expect(afterStopRestartCount).toBe(restartCount);
+    expect(manager.getSelectedView()?.manualRestartCount).toBe(0);
+  });
+
+  test("reports blocked state when a startup dependency fails", async () => {
+    const launched: string[] = [];
+    const launchAdapter = new LaunchInstructionExecutionAdapter({
+      now: () => "now",
+      pathReader: async () => process.env.PATH ?? "",
+      spawner: (options) => {
+        launched.push(options.cmd[0] ?? "");
+        if (options.cmd[0] === "missing") {
+          throw new Error("missing executable");
+        }
+        return {
+          pid: 1,
+          stdout: null,
+          stderr: null,
+          exited: new Promise(() => {}),
+          signalCode: null,
+          kill: () => {},
+        };
+      },
+    });
+    const manager = new ServiceManager(
+      [
+        service({
+          name: "db",
+          command: ["missing"],
+        }),
+        service({
+          name: "api",
+          command: ["bun", "run", "dev"],
+          depends_on: ["db"],
+        }),
+      ],
+      { launchAdapter },
+    );
+
+    await manager.startAll();
+
+    expect(manager.getViews()[1]?.state).toBe("BLOCKED");
+    expect(manager.getViews()[1]?.log.all().at(-1)?.line).toBe(
+      'Startup blocked by failed Startup Dependency "db".',
+    );
+    expect(launched).toEqual(["missing"]);
+  });
+
+  test("tracks manual restarts separately from automatic Restart Rule attempts", async () => {
+    const manager = new ServiceManager([
+      service({
+        name: "api",
+        command: ["bun", "-e", "setInterval(() => {}, 1000)"],
+      }),
+    ]);
+
+    await manager.startAll();
+    const started = await waitFor(() => manager.getServicePids().length === 1);
+    expect(started).toBe(true);
+
+    await manager.restartSelected();
+
+    expect(manager.getSelectedView()?.manualRestartCount).toBe(1);
+    expect(manager.getSelectedView()?.restartCount).toBe(0);
+
+    await manager.stopAll();
   });
 });
