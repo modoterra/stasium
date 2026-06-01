@@ -175,4 +175,24 @@ describe("manifest rendering", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test("rejects unresolved Startup Dependencies at the Manifest Adapter boundary", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-manifest-"));
+    const manifestPath = join(dir, "stasium.toml");
+    await Bun.write(
+      manifestPath,
+      [
+        "[[service]]",
+        'name = "api"',
+        'command = ["bun", "run", "dev"]',
+        'depends_on = ["missing"]',
+      ].join("\n"),
+    );
+
+    try {
+      await expect(loadManifest(manifestPath)).rejects.toThrow(ManifestError);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
