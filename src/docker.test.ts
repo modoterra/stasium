@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { createDockerComposeExternalRuntimeAdapter, getStableDockerServiceNames } from "./docker";
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -133,6 +134,40 @@ describe("createDockerComposeExternalRuntimeAdapter", () => {
       expect(commands).toContain(
         `docker compose -f ${join(dir, "compose.yml")} logs -f --tail=200 db`,
       );
+    } finally {
+      restoreSpawn();
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("surfaces Docker Compose behavior through External Runtime Visibility", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-compose-"));
+    const commands: string[] = [];
+    const restoreSpawn = installFakeDockerSpawn(commands);
+
+    try {
+      await writeFile(join(dir, "compose.yml"), "services:\n  db:\n    image: postgres\n");
+      const runtime = await createDockerComposeExternalRuntimeAdapter().detect(dir);
+      if (!runtime) throw new Error("Expected Docker Compose runtime");
+      const manager = new ExternalRuntimeVisibilityManager([runtime]);
+
+      await manager.refresh();
+
+      expect(manager.getProcesses().map((process) => process.name)).toEqual(["api", "db"]);
+      expect(manager.getProcesses().map((process) => process.state)).toEqual(["exited", "running"]);
+
+      manager.selectIndex(1);
+      await manager.restartSelected();
+      manager.streamSelectedLogs();
+      await delay(50);
+
+      expect(commands).toContain(`docker compose -f ${join(dir, "compose.yml")} restart db`);
+      expect(
+        manager
+          .getSelectedLogBuffer()
+          ?.all()
+          .map((entry) => entry.line),
+      ).toEqual(["line one", "line two"]);
     } finally {
       restoreSpawn();
       await rm(dir, { recursive: true, force: true });
