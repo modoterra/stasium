@@ -29,12 +29,21 @@ irm https://raw.githubusercontent.com/modoterra/stasium/main/install.ps1 | iex
 ## Startup Updates
 
 Stasium checks the stable Update Channel on startup before opening Project Setup or the Workspace.
-Update checks are bounded and fail open: network failures, unavailable metadata, unsupported
-platforms, and unsafe installs are reported as warnings and do not stop normal usage.
+The check reads `update-stable.json` from the latest GitHub Release, compares it to the running
+Stasium version, and selects the matching binary for the current platform.
 
-Release assets are checksum-verified before Stasium replaces a binary. Stasium only self-updates
-executables that look like Stasium binaries; package-manager-owned installs, development runs, or
-other unsafe paths fall back to manual update instructions.
+Startup update checks are bounded and fail open. Network failures, unavailable metadata,
+unsupported platforms, malformed preferences, and unsafe installs are reported as warnings and do not
+stop normal usage.
+
+When an update can be installed safely, Stasium downloads the release asset to a temporary location,
+verifies its SHA-256 checksum from release metadata, replaces the current binary, and asks you to
+restart Stasium. If Stasium cannot safely replace the current executable, it prints manual update
+instructions instead.
+
+Stasium only self-updates executables that look like Stasium binaries. Package-manager-owned
+installs, development runs such as `bun run dev:cli`, or other unsafe paths fall back to manual
+update instructions so Stasium does not overwrite another tool's executable.
 
 Startup update preferences live outside project Manifests at:
 
@@ -63,6 +72,9 @@ To disable startup update checks:
 Supported auto-update assets match the release binaries listed above. If Stasium reports that an
 update cannot be applied automatically, download the matching asset from GitHub Releases and replace
 your installed binary manually or through the package manager that installed it.
+
+Release builds stamp the Git tag version into the binary before packaging, so version comparisons use
+the released Stasium version rather than the repository development version.
 
 ## Development
 
