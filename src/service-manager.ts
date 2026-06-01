@@ -136,7 +136,7 @@ export class ServiceManager {
   }
 
   async startAll(options: { shouldCancel?: () => boolean } = {}): Promise<void> {
-    const layers = this.getTopologicalLayers();
+    const layers = this.getStartupLayers();
 
     for (const layer of layers) {
       if (options.shouldCancel?.()) return;
@@ -398,15 +398,11 @@ export class ServiceManager {
     });
   }
 
-  private getTopologicalOrderNames(): string[] {
-    return this.runGraphOperation(() => this.collectionLifecycle.startupOrder());
-  }
-
   private getShutdownOrderNames(): string[] {
     return this.runGraphOperation(() => this.collectionLifecycle.shutdownOrder());
   }
 
-  private getTopologicalLayers(): string[][] {
+  private getStartupLayers(): string[][] {
     return this.runGraphOperation(() => this.collectionLifecycle.startupLayers());
   }
 
