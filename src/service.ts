@@ -4,6 +4,7 @@ import {
   type LaunchExecutionHandle,
 } from "./launch-execution";
 import { resolveRuntimeWorkingDir } from "./process-info";
+import { ProcessClaimStore } from "./process-claim";
 import type { LogEntry, ServiceConfig, ServicePid, ServiceState } from "./types";
 
 export type ServiceEvent =
@@ -21,6 +22,7 @@ export class ServiceProcess {
   private readonly detached = SHOULD_DETACH_PROCESS_GROUP;
   private readonly workingDir: string;
   private readonly launchAdapter: LaunchInstructionExecutionAdapter;
+  private readonly processClaimStore: ProcessClaimStore | null;
   private state: ServiceState = "STOPPED";
   private launchHandle: LaunchExecutionHandle | null = null;
   private subscribers: Set<ServiceSubscriber> = new Set();
@@ -30,11 +32,17 @@ export class ServiceProcess {
   private command: string[] = [];
   private startedAt: string | null = null;
   private identityVerified = false;
+  private activeClaim: ServicePid | null = null;
 
-  constructor(config: ServiceConfig, launchAdapter = new LaunchInstructionExecutionAdapter()) {
+  constructor(
+    config: ServiceConfig,
+    launchAdapter = new LaunchInstructionExecutionAdapter(),
+    processClaimStore: ProcessClaimStore | null = null,
+  ) {
     this.config = config;
     this.workingDir = resolveRuntimeWorkingDir(config.working_dir);
     this.launchAdapter = launchAdapter;
+    this.processClaimStore = processClaimStore;
   }
 
   subscribe(handler: ServiceSubscriber): () => void {
@@ -81,6 +89,7 @@ export class ServiceProcess {
     this.command = [];
     this.startedAt = null;
     this.identityVerified = false;
+    this.activeClaim = null;
     this.setState("STARTING");
 
     const argv = this.config.command;
@@ -136,10 +145,13 @@ export class ServiceProcess {
     }
   }
 
-  private handleLaunchEvent(event: LaunchExecutionEvent): void {
+  private async handleLaunchEvent(event: LaunchExecutionEvent): Promise<void> {
     if (event.type === "started") {
       this.startedAt = event.startedAt;
       this.identityVerified = event.identityVerified;
+      const claim = this.buildPidInfo(event.pid);
+      await this.processClaimStore?.claimDirectManagedProcess(claim);
+      this.activeClaim = claim;
       this.setState("RUNNING");
       return;
     }
@@ -149,7 +161,7 @@ export class ServiceProcess {
       return;
     }
 
-    if (event.type === "spawn-failed") {
+    if (event.type === "spawn-failed" || event.type === "start-rejected") {
       this.lastExitCode = 1;
       this.lastSignal = null;
       this.setState("FAILED");
@@ -158,13 +170,27 @@ export class ServiceProcess {
 
     this.lastExitCode = event.code;
     this.lastSignal = event.signal;
+    const claim = this.activeClaim;
     this.launchHandle = null;
+    this.activeClaim = null;
     if (this.stopRequested || event.code === 0) {
       this.setState("STOPPED");
     } else {
       this.setState("FAILED");
     }
     this.emit({ type: "exit", code: event.code, signal: event.signal });
+    if (claim) void this.processClaimStore?.releaseDirectManagedProcess(claim);
+  }
+
+  private buildPidInfo(pid: number): ServicePid {
+    return {
+      name: this.config.name,
+      pid,
+      command: [...this.command],
+      workingDir: this.workingDir,
+      startedAt: this.startedAt ?? "",
+      identityVerified: this.identityVerified,
+    };
   }
 
   private setState(state: ServiceState) {

@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
+import { ProcessClaimStore } from "./process-claim";
 import { ServiceManager, ServiceManagerError } from "./service-manager";
-import type { ServiceConfig } from "./types";
+import type { ServiceConfig, ServicePid } from "./types";
 
 const service = (input: ProcessDefinitionInput): ServiceConfig => normalizeProcessDefinition(input);
 
@@ -269,5 +270,102 @@ describe("ServiceManager", () => {
     expect(manager.getSelectedView()?.restartCount).toBe(0);
 
     await manager.stopAll();
+  });
+
+  test("creates Process Claims before reporting running", async () => {
+    const events: string[] = [];
+    class TestClaims extends ProcessClaimStore {
+      override async claimDirectManagedProcess(claim: ServicePid): Promise<void> {
+        events.push(`claim:${claim.name}`);
+      }
+    }
+
+    const manager = new ServiceManager([service({ name: "api", command: ["bun", "run", "dev"] })], {
+      processClaimStore: new TestClaims(process.cwd()),
+      launchAdapter: new LaunchInstructionExecutionAdapter({
+        now: () => "now",
+        pathReader: async () => process.env.PATH ?? "",
+        processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
+        spawner: () => ({
+          pid: 10,
+          stdout: null,
+          stderr: null,
+          exited: new Promise(() => {}),
+          signalCode: null,
+          kill: () => {},
+        }),
+      }),
+    });
+    manager.onProcessChange(() => {
+      if (manager.getSelectedView()?.state === "RUNNING") events.push("running");
+    });
+
+    await manager.startAll();
+
+    expect(events).toEqual(["claim:api", "running"]);
+  });
+
+  test("stops spawned process and reports failed state when Process Claim creation fails", async () => {
+    const killed: NodeJS.Signals[] = [];
+    class FailingClaims extends ProcessClaimStore {
+      override async claimDirectManagedProcess(): Promise<void> {
+        throw new Error("claim failed");
+      }
+    }
+
+    const manager = new ServiceManager([service({ name: "api", command: ["bun", "run", "dev"] })], {
+      processClaimStore: new FailingClaims(process.cwd()),
+      launchAdapter: new LaunchInstructionExecutionAdapter({
+        now: () => "now",
+        pathReader: async () => process.env.PATH ?? "",
+        processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
+        spawner: () => ({
+          pid: 11,
+          stdout: null,
+          stderr: null,
+          exited: new Promise(() => {}),
+          signalCode: null,
+          kill: (signal) => killed.push(signal),
+        }),
+      }),
+    });
+
+    await manager.startAll();
+
+    expect(killed).toEqual(["SIGTERM"]);
+    expect(manager.getSelectedView()?.state).toBe("FAILED");
+    expect(manager.getSelectedView()?.log.all().at(-1)?.line).toBe("claim failed");
+  });
+
+  test("releases Process Claims on claim-relevant exit events", async () => {
+    const released: string[] = [];
+    class TestClaims extends ProcessClaimStore {
+      override async claimDirectManagedProcess(): Promise<void> {}
+      override async releaseDirectManagedProcess(claim: ServicePid): Promise<void> {
+        released.push(claim.name);
+      }
+    }
+
+    const manager = new ServiceManager([service({ name: "api", command: ["bun", "run", "dev"] })], {
+      processClaimStore: new TestClaims(process.cwd()),
+      launchAdapter: new LaunchInstructionExecutionAdapter({
+        now: () => "now",
+        pathReader: async () => process.env.PATH ?? "",
+        processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
+        spawner: () => ({
+          pid: 12,
+          stdout: null,
+          stderr: null,
+          exited: Promise.resolve(0),
+          signalCode: null,
+          kill: () => {},
+        }),
+      }),
+    });
+
+    await manager.startAll();
+    await waitFor(() => released.length === 1);
+
+    expect(released).toEqual(["api"]);
   });
 });

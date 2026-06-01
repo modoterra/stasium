@@ -10,8 +10,8 @@ import {
   writeManifest,
 } from "./init";
 import { loadManifest, parseServiceBlock, renderServiceBlock, saveManifest } from "./manifest";
-import { cleanupExistingPids, syncPidFiles } from "./pidfile";
 import { normalizeProcessDefinition } from "./process-definition";
+import { ProcessClaimStore } from "./process-claim";
 import { getTopologicalServiceOrder } from "./service-graph";
 import { ServiceManager } from "./service-manager";
 import { fileExists, getErrorMessage } from "./shared";
@@ -111,18 +111,12 @@ const setupKeybindings = (
   appConfig: AppConfig | undefined,
   runtime: AppRuntime,
   shutdown: ShutdownController,
+  processClaimStore: ProcessClaimStore,
 ) => {
   let deleteConfirming = false;
   let discoverySelection: DiscoverySelection | null = null;
   let discoveryOpening = false;
   let discoveryApplying = false;
-  const syncPids = async () => {
-    await syncPidFiles(process.cwd(), manager.getServicePids(), {
-      knownServices: manager.getConfigs().map((config) => config.name),
-      logger: (message) => console.error(message),
-    });
-  };
-
   const closeDiscovery = () => {
     discoveryApplying = false;
     discoverySelection = null;
@@ -251,9 +245,12 @@ const setupKeybindings = (
       try {
         const config = parseServiceBlock(toml, dirname(manifestPath));
         const index = manager.getSelectedIndex();
+        const previousName = manager.getSelectedConfig()?.name;
         await manager.updateServiceConfig(index, config);
         await saveManifest(manifestPath, manager.getConfigs(), appConfig);
-        await syncPids();
+        if (previousName && previousName !== config.name) {
+          await processClaimStore.releaseDirectManagedProcessNames([previousName]);
+        }
       } catch (error) {
         controls.setEditError(getErrorMessage(error));
         return;
@@ -285,7 +282,6 @@ const setupKeybindings = (
           normalizeProcessDefinition({ name, command }, { baseDir: dirname(manifestPath) }),
         );
         await saveManifest(manifestPath, manager.getConfigs(), appConfig);
-        await syncPids();
         controls.hideAddOverlay();
         focusManager.setMode("normal");
       } catch (error) {
@@ -366,7 +362,6 @@ const setupKeybindings = (
           }
 
           await saveManifest(manifestPath, manager.getConfigs(), appConfig);
-          await syncPids();
 
           for (const warning of finalized.warnings) {
             console.error(`Discovery warning: ${warning}`);
@@ -387,9 +382,10 @@ const setupKeybindings = (
 
   const handleDeleteConfirm = async (key: KeyEvent) => {
     if (key.name === "y") {
+      const removedName = manager.getSelectedConfig()?.name;
       await manager.removeSelected();
       await saveManifest(manifestPath, manager.getConfigs(), appConfig);
-      await syncPids();
+      if (removedName) await processClaimStore.releaseDirectManagedProcessNames([removedName]);
       deleteConfirming = false;
       controls.hideDeleteConfirm();
       return;
@@ -740,6 +736,7 @@ const mountMainUiSession = (
     appConfig,
     runtime,
     shutdown,
+    new ProcessClaimStore(process.cwd(), { logger: (message) => console.error(message) }),
   );
 
   if (snapshot) {
@@ -767,7 +764,10 @@ const startApp = async (
   runtime: AppRuntime,
 ) => {
   const manifest = await loadManifest(MANIFEST_PATH);
-  const manager = new ServiceManager(manifest.services);
+  const processClaimStore = new ProcessClaimStore(process.cwd(), {
+    logger: (message) => console.error(message),
+  });
+  const manager = new ServiceManager(manifest.services, { processClaimStore });
   const appConfig = manifest.app;
   const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
 
@@ -780,17 +780,6 @@ const startApp = async (
   });
   shutdown.install();
   shutdownRef.current = shutdown;
-
-  const syncCurrentPids = async () => {
-    await syncPidFiles(process.cwd(), manager.getServicePids(), {
-      knownServices: manager.getConfigs().map((config) => config.name),
-      logger: (message) => console.error(message),
-    });
-  };
-
-  manager.onProcessChange(() => {
-    void syncCurrentPids();
-  });
 
   const sessionRef: { current: MainUiSession | null } = {
     current: mountMainUiSession(
@@ -808,10 +797,9 @@ const startApp = async (
 
   void (async () => {
     try {
-      await cleanupExistingPids(process.cwd(), {
-        logger: (message) => console.error(message),
-        knownServices: manifest.services.map((service) => service.name),
-      });
+      await processClaimStore.cleanupStaleDirectManagedProcessClaims(
+        manifest.services.map((service) => service.name),
+      );
       if (runtime.closing || runtime.disposed) return;
 
       await manager.startAll({
@@ -819,7 +807,6 @@ const startApp = async (
       });
       if (runtime.closing || runtime.disposed) return;
 
-      await syncCurrentPids();
       if (runtime.closing || runtime.disposed || !isDockerEnabled(appConfig)) return;
 
       const composePath = await detectComposeFile(process.cwd());
