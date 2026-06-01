@@ -1,5 +1,7 @@
 # stasium
 
+Stasium is a local service runner for project workspaces. It reads `stasium.toml`, starts services in dependency order, streams logs into a terminal UI, and shuts spawned processes down cleanly.
+
 ## Installation
 
 **Linux / macOS:**
@@ -17,31 +19,37 @@ irm https://raw.githubusercontent.com/modoterra/stasium/main/install.ps1 | iex
 **Manual download:** grab the binary for your platform from
 [GitHub Releases](https://github.com/modoterra/stasium/releases/latest).
 
-| Binary | Platform |
-|---|---|
-| `stasium-linux-x64` | Linux x86_64 |
-| `stasium-linux-arm64` | Linux ARM64 |
-| `stasium-macos-arm64` | macOS Apple Silicon |
-| `stasium-windows-x64.exe` | Windows x86_64 |
+| Binary                    | Platform            |
+| ------------------------- | ------------------- |
+| `stasium-linux-x64`       | Linux x86_64        |
+| `stasium-linux-arm64`     | Linux ARM64         |
+| `stasium-macos-arm64`     | macOS Apple Silicon |
+| `stasium-windows-x64.exe` | Windows x86_64      |
 
 ## Development
 
-To install dependencies:
+Install dependencies:
 
 ```bash
 bun install
 ```
 
-To run:
+Run the CLI:
 
 ```bash
-bun run index.ts
+bun run dev:cli
 ```
 
-To initialize a manifest:
+Initialize a manifest:
 
 ```bash
 bun run index.ts init
+```
+
+Run the Vite website:
+
+```bash
+bun run dev
 ```
 
 `init` opens an interactive selector of detected services. Use `up/down` to move,
@@ -69,8 +77,18 @@ bun run format:check
 bun run typecheck
 bun run test
 bun run build
+bun run build:cli
+bun run build:site
+bun run preview
 bun run init:hooks
 ```
+
+Tooling:
+
+- Oxlint runs lint checks.
+- Oxfmt handles formatting.
+- TypeScript checks the CLI, tests, Vite config, and website.
+- Bun runs tests and builds the standalone CLI binary.
 
 GitHub Actions:
 
@@ -84,8 +102,6 @@ Commit and branch rules:
 - Commits must follow Conventional Commits.
 - Branch names must match: `main`, `develop`, or `type/name` where type is one of
   `feature`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`.
-
-This project was created using `bun init` in bun v1.3.9. [Bun](https://bun.com) is a fast all-in-one JavaScript runtime.
 
 ## Contributing
 

@@ -1800,7 +1800,6 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       if (!row) return;
 
       const key = getLogEntryKey(entry, index);
-      const selected = selectedLogEntryKey === key;
       const expanded = expandedLogEntryKey === key;
       const backgroundColor = logRowBackground(key);
       row.entryKey = key;

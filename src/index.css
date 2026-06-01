@@ -1,0 +1,53 @@
+:root {
+  --accent: #86efac;
+  --bg: #070a08;
+  --border: rgba(255, 255, 255, 0.12);
+  --muted: #a3aea7;
+  --panel: rgba(255, 255, 255, 0.05);
+  --text: #f4fff8;
+
+  --sans: Inter, ui-sans-serif, system-ui, sans-serif;
+  --mono: ui-monospace, Consolas, monospace;
+
+  background: var(--bg);
+  color: var(--text);
+  color-scheme: dark;
+  font: 18px/1.55 var(--sans);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  margin: 0 auto;
+  max-width: 1160px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+h1 {
+  font-size: clamp(48px, 10vw, 116px);
+  font-weight: 700;
+  letter-spacing: -0.07em;
+  line-height: 0.92;
+  margin-bottom: 28px;
+}
+
+h2 {
+  font-size: 24px;
+  line-height: 1.1;
+}

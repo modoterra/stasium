@@ -1,0 +1,3 @@
+# Support cross-runtime Startup Dependencies without external Process Ownership
+
+Stasium will allow **Startup Dependencies** to refer to **Managed Processes** across direct and external runtimes. When a **Direct Managed Process** depends on an **External Managed Process**, Stasium may request that the **External Runtime** make the dependency available before starting the dependent, but this does not create Stasium **Process Ownership** or **Process Claims** for the external process. External processes that Stasium starts automatically to satisfy Startup Dependencies are tracked in an **External Runtime Session** and receive stop requests during **Shutdown**, preserving cleanup intent without claiming ownership of externally owned lifecycle or identity.

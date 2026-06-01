@@ -16,7 +16,7 @@ let pidDirRoot = resolve(homedir(), ".local", "share", "stasium");
 const checksum = (value: string): string => createHash("md5").update(value).digest("hex");
 
 const sanitizeServiceName = (name: string): string =>
-  name.replace(/[\\/]/g, "_").replace(/\0/g, "");
+  name.replace(/[\\/]/g, "_").split(String.fromCodePoint(0)).join("");
 
 const buildPidFileName = (name: string): string => `${sanitizeServiceName(name)}${PID_EXTENSION}`;
 
@@ -100,9 +100,7 @@ type PidFileRecord = {
   platform: NodeJS.Platform;
 };
 
-type ParsedPidFile =
-  | { kind: "legacy"; pid: number }
-  | { kind: "record"; record: PidFileRecord };
+type ParsedPidFile = { kind: "legacy"; pid: number } | { kind: "record"; record: PidFileRecord };
 
 const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) && value.every((item) => typeof item === "string");
@@ -297,7 +295,9 @@ export const cleanupExistingPids = async (
       continue;
     }
 
-    const matches = await Promise.all(entry.records.map((record) => liveProcessMatchesRecord(record)));
+    const matches = await Promise.all(
+      entry.records.map((record) => liveProcessMatchesRecord(record)),
+    );
     if (!matches.every(Boolean)) {
       logger?.(`Skipping PID ${pid}; pidfile identity no longer matches the live process.`);
       continue;

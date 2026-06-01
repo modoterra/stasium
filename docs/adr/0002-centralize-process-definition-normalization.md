@@ -1,0 +1,3 @@
+# Centralize Process Definition normalization
+
+Stasium will treat **Process Definition** normalization as a domain concern instead of repeating validation across Manifest parsing, Discovery, Manifest Editing, and Startup. Manifest and Discovery Adapters may parse their own file/template syntax, but valid **Process Definitions** should flow through one normalization path that produces runtime-ready launch data, absolute working directories, defaulted **Restart Rules**, and empty collections for absent environment values or **Startup Dependencies**. Manifest rendering remains an Adapter concern so the domain Module owns meaning and invariants without owning TOML formatting.

@@ -1,0 +1,3 @@
+# Separate direct ownership from external runtime visibility
+
+Stasium presents both directly launched processes and external-runtime processes in one management experience, but only **Direct Managed Processes** have Stasium **Process Ownership** and **Process Claims**. **External Managed Processes** are shown through **External Runtime Visibility**, where Stasium forwards requested lifecycle actions to the external runtime instead of owning cleanup or identity. This keeps the user experience unified while avoiding unsafe assumptions that Docker Compose, Podman, Kubernetes, or other external runtimes can be claimed and cleaned up like processes Stasium launched itself.

@@ -1,9 +1,10 @@
-# dependencies (bun install)
+# dependencies
 node_modules
 
 # output
 out
 dist
+dist-ssr
 release
 stasium
 *.tgz
@@ -14,8 +15,13 @@ coverage
 
 # logs
 logs
-_.log
-report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # dotenv environment variable files
 .env
@@ -23,6 +29,7 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .env.test.local
 .env.production.local
 .env.local
+*.local
 
 # caches
 .eslintcache
@@ -30,8 +37,13 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 *.tsbuildinfo
 .opencode
 
-# IntelliJ based IDEs
+# editor directories and files
+.vscode/*
+!.vscode/extensions.json
 .idea
-
-# Finder (MacOS) folder config
 .DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

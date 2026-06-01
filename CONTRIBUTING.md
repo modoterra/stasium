@@ -20,6 +20,8 @@ bun run test
 bun run build
 ```
 
+Oxlint handles lint checks, and Oxfmt handles formatting.
+
 ## Commit Requirements
 
 ### Conventional Commits (required)

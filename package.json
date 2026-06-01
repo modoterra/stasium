@@ -1,26 +1,44 @@
 {
   "name": "stasium",
-  "license": "MIT",
-  "module": "index.ts",
-  "type": "module",
+  "version": "0.0.0",
   "private": true,
+  "license": "MIT",
+  "type": "module",
+  "module": "index.ts",
   "scripts": {
-    "build": "bun build ./index.ts --compile --outfile ./dist/stasium",
+    "dev": "vite",
+    "dev:cli": "bun run index.ts",
+    "build": "bun run build:cli && bun run build:site",
+    "build:cli": "bun build ./index.ts --compile --outfile ./dist/stasium",
+    "build:site": "vite build",
+    "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "lint": "biome lint .",
-    "format": "biome format --write .",
-    "format:check": "biome format .",
+    "lint": "oxlint --quiet .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
     "test": "bun test",
     "init:hooks": "bun ./scripts/install-githooks.js"
   },
+  "dependencies": {
+    "@opentui/core": "^0.1.79",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6"
+  },
   "devDependencies": {
-    "@biomejs/biome": "^1.6.4",
+    "@babel/core": "^7.29.0",
     "@commitlint/cli": "^19.3.0",
     "@commitlint/config-conventional": "^19.2.2",
+    "@rolldown/plugin-babel": "^0.2.3",
+    "@types/babel__core": "^7.20.5",
     "@types/bun": "latest",
-    "typescript": "^5"
-  },
-  "dependencies": {
-    "@opentui/core": "^0.1.79"
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "oxfmt": "latest",
+    "oxlint": "latest",
+    "typescript": "~6.0.2",
+    "vite": "^8.0.12"
   }
 }

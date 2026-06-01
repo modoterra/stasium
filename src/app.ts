@@ -690,7 +690,7 @@ const restoreMainUiSnapshot = (
   controls: UiControls,
   snapshot: MainUiSnapshot,
 ): void => {
-  for (const panel of [...focusManager.getVisiblePanels()]) {
+  for (const panel of focusManager.getVisiblePanels()) {
     if (!snapshot.visiblePanels.includes(panel)) {
       focusManager.togglePanel(panel);
     }

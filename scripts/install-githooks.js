@@ -17,7 +17,7 @@ for (const hook of hooks) {
   try {
     copyFileSync(source, target);
     chmodSync(target, 0o755);
-  } catch (error) {
+  } catch {
     console.error(`Failed to install ${hook}`);
     process.exit(1);
   }
