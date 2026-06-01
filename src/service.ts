@@ -85,7 +85,7 @@ export class ServiceProcess {
 
     const argv = this.config.command;
     this.command = [...argv];
-    this.launchHandle = await this.launchAdapter.start(
+    const launchHandle = await this.launchAdapter.start(
       {
         argv,
         workingDir: this.workingDir,
@@ -94,6 +94,9 @@ export class ServiceProcess {
       },
       (event) => this.handleLaunchEvent(event),
     );
+    if (launchHandle && this.state === "RUNNING") {
+      this.launchHandle = launchHandle;
+    }
   }
 
   async stop(signal: NodeJS.Signals = "SIGINT"): Promise<void> {
