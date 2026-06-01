@@ -1,5 +1,8 @@
 import { DirectManagedProcessCollectionLifecycle } from "./direct-managed-process-collection";
-import { DirectManagedProcessLifecycle } from "./direct-managed-process-lifecycle";
+import {
+  DirectManagedProcessLifecycle,
+  DirectManagedProcessLifecycleCollection,
+} from "./direct-managed-process-lifecycle";
 import { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { LogBuffer } from "./log-buffer";
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
@@ -42,7 +45,7 @@ export class ServiceManager {
   private services: ServiceProcess[];
   private views: ServiceView[];
   private unsubscribers: Array<() => void>;
-  private readonly lifecycles: Map<ServiceProcess, DirectManagedProcessLifecycle> = new Map();
+  private readonly lifecycles = new DirectManagedProcessLifecycleCollection<ServiceProcess>();
   private readonly collectionLifecycle: DirectManagedProcessCollectionLifecycle;
   private readonly launchAdapter: LaunchInstructionExecutionAdapter;
   private readonly processClaimStore: ProcessClaimStore | null;
@@ -486,16 +489,10 @@ export class ServiceManager {
     if (this.restartTicker) return;
 
     this.restartTicker = setInterval(() => {
-      let changed = false;
       const now = Date.now();
+      const changed = this.lifecycles.tick((service) => this.getViewByService(service), now);
 
-      for (const [service, lifecycle] of this.lifecycles.entries()) {
-        const view = this.getViewByService(service);
-        if (!view) continue;
-        changed = lifecycle.tick(view, now) || changed;
-      }
-
-      if (![...this.lifecycles.values()].some((lifecycle) => lifecycle.hasPendingRestart())) {
+      if (!this.lifecycles.hasPendingRestart()) {
         this.stopRestartTicker();
       }
 
