@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { ExternalRuntimeVisibilityManager, type ExternalRuntime } from "./external-runtime";
 import { createShutdownHandler } from "./shutdown";
-import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import type { ServiceManager } from "./service-manager";
+import type { ExternalManagedProcess, LogEntry } from "./types";
 
 const handlers: Array<ReturnType<typeof createShutdownHandler>> = [];
 
@@ -102,4 +103,92 @@ describe("shutdown handler", () => {
     expect(calls).toEqual(["stop direct", "stop external session", "after cleanup"]);
     expect(messages).toEqual(['External Runtime cleanup warning for "docker:db": stop failed']);
   });
+
+  test("does not stop manually started External Managed Processes during shutdown", async () => {
+    const actions: string[] = [];
+    let state: ExternalManagedProcess["state"] = "exited";
+    const externalRuntimeManager = new ExternalRuntimeVisibilityManager([
+      runtime("docker", () => [externalProcess("docker", "db", state)], actions),
+    ]);
+    const shutdown = createShutdownHandler({
+      cwd: process.cwd(),
+      manager: stoppedManager(),
+      externalRuntimeManager,
+      getServicePids: () => [],
+    });
+    handlers.push(shutdown);
+
+    await externalRuntimeManager.refresh();
+    await externalRuntimeManager.start("db");
+    state = "running";
+    await shutdown.run();
+
+    expect(actions).toEqual(["docker:start:db"]);
+  });
+
+  test("stops auto-started External Managed Processes during shutdown", async () => {
+    const actions: string[] = [];
+    let state: ExternalManagedProcess["state"] = "exited";
+    const testRuntime = runtime("docker", () => [externalProcess("docker", "db", state)], actions);
+    testRuntime.start = async (name) => {
+      actions.push(`docker:start:${name}`);
+      state = "running";
+    };
+    const externalRuntimeManager = new ExternalRuntimeVisibilityManager([testRuntime]);
+    const shutdown = createShutdownHandler({
+      cwd: process.cwd(),
+      manager: stoppedManager(),
+      externalRuntimeManager,
+      getServicePids: () => [],
+    });
+    handlers.push(shutdown);
+
+    await externalRuntimeManager.ensureProcessAvailable("db");
+    await shutdown.run();
+
+    expect(actions).toEqual(["docker:start:db", "docker:stop:db"]);
+  });
+});
+
+const stoppedManager = (): ServiceManager =>
+  ({
+    stopAll: async () => {},
+    waitForExit: async () => true,
+    forceStopAll: async () => {},
+    getConfigs: () => [],
+  }) as unknown as ServiceManager;
+
+const runtime = (
+  id: string,
+  getProcesses: () => ExternalManagedProcess[],
+  actions: string[] = [],
+): ExternalRuntime => ({
+  id,
+  name: id,
+  snapshot: async () => getProcesses(),
+  isAvailable: (process) => process.state === "running",
+  start: async (name) => {
+    actions.push(`${id}:start:${name}`);
+  },
+  stop: async (name) => {
+    actions.push(`${id}:stop:${name}`);
+  },
+  restart: async (name) => {
+    actions.push(`${id}:restart:${name}`);
+  },
+  streamOutput: (_name: string, _onOutput: (entry: LogEntry) => void) => null,
+  destroy: async () => {},
+});
+
+const externalProcess = (
+  runtimeId: string,
+  name: string,
+  state: ExternalManagedProcess["state"],
+): ExternalManagedProcess => ({
+  runtimeId,
+  runtimeName: runtimeId,
+  name,
+  state,
+  status: state,
+  ports: "",
 });
