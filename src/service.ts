@@ -1,5 +1,9 @@
-import { readLiveProcessInfo, resolveRuntimeWorkingDir } from "./process-info";
-import { getErrorMessage } from "./shared";
+import {
+  LaunchInstructionExecutionAdapter,
+  type LaunchExecutionEvent,
+  type LaunchExecutionHandle,
+} from "./launch-execution";
+import { resolveRuntimeWorkingDir } from "./process-info";
 import type { LogEntry, ServiceConfig, ServicePid, ServiceState } from "./types";
 
 export type ServiceEvent =
@@ -9,91 +13,16 @@ export type ServiceEvent =
 
 type ServiceSubscriber = (event: ServiceEvent) => void;
 
-const timestamp = (): string => new Date().toISOString();
-
-const lineDecoder = new TextDecoder();
 // Full process-tree cleanup relies on Unix process groups. Windows falls back to the direct child.
 const SHOULD_DETACH_PROCESS_GROUP = process.platform !== "win32";
-
-const splitLines = (buffer: string): { lines: string[]; rest: string } => {
-  const parts = buffer.split(/\r?\n/);
-  const rest = parts.pop() ?? "";
-  return { lines: parts, rest };
-};
-
-const resolveShell = (): string => {
-  const shell = process.env.SHELL;
-  if (shell && shell.trim().length > 0) return shell;
-  return "/bin/sh";
-};
-
-type PathReader = (cwd?: string) => Promise<string | null>;
-
-let pathRefreshPromise: Promise<string> | null = null;
-let cachedPath: string | null = null;
-
-const readPathFromShell = async (cwd?: string): Promise<string | null> => {
-  try {
-    const proc = Bun.spawn({
-      cmd: [resolveShell(), "-lc", "printenv PATH"],
-      cwd,
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const output = await new Response(proc.stdout).text();
-    await proc.exited;
-    const freshPath = output.trim();
-    return freshPath.length > 0 ? freshPath : null;
-  } catch {
-    return null;
-  }
-};
-
-let pathReader: PathReader = readPathFromShell;
-
-const getFreshPath = async (cwd?: string): Promise<string> => {
-  if (cachedPath !== null) return cachedPath;
-  if (pathRefreshPromise) return pathRefreshPromise;
-  pathRefreshPromise = (async () => {
-    const freshPath = await pathReader(cwd);
-    cachedPath = freshPath ?? process.env.PATH ?? "";
-    process.env.PATH = cachedPath;
-    return cachedPath;
-  })();
-  try {
-    return await pathRefreshPromise;
-  } finally {
-    pathRefreshPromise = null;
-  }
-};
-
-export const resetPathCacheForTests = (): void => {
-  cachedPath = null;
-  pathRefreshPromise = null;
-  pathReader = readPathFromShell;
-};
-
-export const setPathReaderForTests = (reader: PathReader): void => {
-  cachedPath = null;
-  pathRefreshPromise = null;
-  pathReader = reader;
-};
-
-const buildSpawnEnv = async (
-  cwd: string | undefined,
-  overrides?: Record<string, string>,
-): Promise<NodeJS.ProcessEnv> => {
-  const freshPath = await getFreshPath(cwd);
-  const baseEnv: NodeJS.ProcessEnv = { ...process.env, PATH: freshPath };
-  return overrides ? { ...baseEnv, ...overrides } : baseEnv;
-};
 
 export class ServiceProcess {
   readonly config: ServiceConfig;
   private readonly detached = SHOULD_DETACH_PROCESS_GROUP;
   private readonly workingDir: string;
+  private readonly launchAdapter: LaunchInstructionExecutionAdapter;
   private state: ServiceState = "STOPPED";
-  private process: Bun.Subprocess<"ignore", "pipe", "pipe"> | null = null;
+  private launchHandle: LaunchExecutionHandle | null = null;
   private subscribers: Set<ServiceSubscriber> = new Set();
   private lastExitCode: number | null = null;
   private lastSignal: string | null = null;
@@ -101,12 +30,11 @@ export class ServiceProcess {
   private command: string[] = [];
   private startedAt: string | null = null;
   private identityVerified = false;
-  private stdoutRemainder = "";
-  private stderrRemainder = "";
 
-  constructor(config: ServiceConfig) {
+  constructor(config: ServiceConfig, launchAdapter = new LaunchInstructionExecutionAdapter()) {
     this.config = config;
     this.workingDir = resolveRuntimeWorkingDir(config.working_dir);
+    this.launchAdapter = launchAdapter;
   }
 
   subscribe(handler: ServiceSubscriber): () => void {
@@ -127,11 +55,11 @@ export class ServiceProcess {
   }
 
   getPid(): number | null {
-    return this.process?.pid ?? null;
+    return this.launchHandle?.pid ?? null;
   }
 
   getPidInfo(): ServicePid | null {
-    const pid = this.process?.pid;
+    const pid = this.launchHandle?.pid;
     if (!pid || !this.startedAt || this.command.length === 0) return null;
     return {
       name: this.config.name,
@@ -144,7 +72,7 @@ export class ServiceProcess {
   }
 
   isRunning(): boolean {
-    return this.process !== null;
+    return this.launchHandle !== null;
   }
 
   async start(): Promise<void> {
@@ -157,166 +85,77 @@ export class ServiceProcess {
 
     const argv = this.config.command;
     this.command = [...argv];
-
-    try {
-      const env = await buildSpawnEnv(this.workingDir, this.config.env);
-      this.process = Bun.spawn({
-        cmd: argv,
-        cwd: this.workingDir,
-        env,
+    const launchHandle = await this.launchAdapter.start(
+      {
+        argv,
+        workingDir: this.workingDir,
+        env: this.config.env,
         detached: this.detached,
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-    } catch (error) {
-      this.lastExitCode = 1;
-      this.lastSignal = null;
-      this.setState("FAILED");
-      this.emit({
-        type: "log",
-        entry: { timestamp: timestamp(), line: getErrorMessage(error), stream: "stderr" },
-      });
-      return;
+      },
+      (event) => this.handleLaunchEvent(event),
+    );
+    if (launchHandle && this.state === "RUNNING") {
+      this.launchHandle = launchHandle;
     }
-
-    const processInfo = await readLiveProcessInfo(this.process.pid);
-    this.startedAt = processInfo?.startedAt ?? timestamp();
-    this.identityVerified = processInfo !== null;
-    this.setState("RUNNING");
-    this.attachStream(this.process.stdout, "stdout");
-    this.attachStream(this.process.stderr, "stderr");
-    this.process.exited
-      .then((code) => {
-        this.lastExitCode = code;
-        this.lastSignal = this.process?.signalCode ?? null;
-        this.process = null;
-        if (this.stopRequested) {
-          this.setState("STOPPED");
-        } else if (code === 0) {
-          this.setState("STOPPED");
-        } else {
-          this.setState("FAILED");
-        }
-        this.emit({ type: "exit", code, signal: this.lastSignal });
-      })
-      .catch((error) => {
-        this.emit({
-          type: "log",
-          entry: { timestamp: timestamp(), line: getErrorMessage(error), stream: "stderr" },
-        });
-        this.setState("FAILED");
-      });
   }
 
   async stop(signal: NodeJS.Signals = "SIGINT"): Promise<void> {
-    if (!this.process) {
+    if (!this.launchHandle) {
       this.setState("STOPPED");
       return;
     }
     this.stopRequested = true;
     this.setState("STOPPING");
     try {
-      this.signalProcess(signal);
+      this.launchHandle.signal(signal);
     } catch {
       this.setState("STOPPED");
     }
   }
 
   async forceStop(signal: NodeJS.Signals = "SIGTERM"): Promise<void> {
-    if (!this.process) {
+    if (!this.launchHandle) {
       this.setState("STOPPED");
       return;
     }
     this.stopRequested = true;
     this.setState("STOPPING");
     try {
-      this.signalProcess(signal);
+      this.launchHandle.signal(signal);
     } catch {
       this.setState("STOPPED");
     }
   }
 
-  private signalProcess(signal: NodeJS.Signals): void {
-    const processHandle = this.process;
-    if (!processHandle) return;
-
-    if (this.signalProcessGroup(processHandle.pid, signal)) return;
-    processHandle.kill(signal);
-  }
-
-  private signalProcessGroup(pid: number, signal: NodeJS.Signals): boolean {
-    if (!this.detached) return false;
-    if (!Number.isInteger(pid) || pid <= 0) return false;
-
-    try {
-      process.kill(-pid, signal);
-      return true;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException | undefined)?.code;
-      if (code === "ESRCH") {
-        return true;
-      }
-      return false;
-    }
-  }
-
-  private attachStream(stream: ReadableStream<Uint8Array> | null, source: "stdout" | "stderr") {
-    if (!stream) return;
-    const reader = stream.getReader();
-    const readLoop = async () => {
-      while (true) {
-        const result = await reader.read();
-        if (result.done) break;
-        const chunk = lineDecoder.decode(result.value);
-        this.appendChunk(source, chunk);
-      }
-      this.flushRemainder(source);
-    };
-    readLoop().catch((error) => {
-      this.emit({
-        type: "log",
-        entry: { timestamp: timestamp(), line: getErrorMessage(error), stream: "stderr" },
-      });
-    });
-  }
-
-  private appendChunk(source: "stdout" | "stderr", chunk: string) {
-    if (source === "stdout") {
-      this.stdoutRemainder += chunk;
-      const { lines, rest } = splitLines(this.stdoutRemainder);
-      this.stdoutRemainder = rest;
-      for (const line of lines) {
-        this.emit({
-          type: "log",
-          entry: { timestamp: timestamp(), line, stream: source },
-        });
-      }
+  private handleLaunchEvent(event: LaunchExecutionEvent): void {
+    if (event.type === "started") {
+      this.startedAt = event.startedAt;
+      this.identityVerified = event.identityVerified;
+      this.setState("RUNNING");
       return;
     }
 
-    this.stderrRemainder += chunk;
-    const { lines, rest } = splitLines(this.stderrRemainder);
-    this.stderrRemainder = rest;
-    for (const line of lines) {
-      this.emit({
-        type: "log",
-        entry: { timestamp: timestamp(), line, stream: source },
-      });
+    if (event.type === "output") {
+      this.emit({ type: "log", entry: event.entry });
+      return;
     }
-  }
 
-  private flushRemainder(source: "stdout" | "stderr") {
-    const remainder = source === "stdout" ? this.stdoutRemainder : this.stderrRemainder;
-    if (remainder.length === 0) return;
-    if (source === "stdout") {
-      this.stdoutRemainder = "";
-    } else {
-      this.stderrRemainder = "";
+    if (event.type === "spawn-failed") {
+      this.lastExitCode = 1;
+      this.lastSignal = null;
+      this.setState("FAILED");
+      return;
     }
-    this.emit({
-      type: "log",
-      entry: { timestamp: timestamp(), line: remainder, stream: source },
-    });
+
+    this.lastExitCode = event.code;
+    this.lastSignal = event.signal;
+    this.launchHandle = null;
+    if (this.stopRequested || event.code === 0) {
+      this.setState("STOPPED");
+    } else {
+      this.setState("FAILED");
+    }
+    this.emit({ type: "exit", code: event.code, signal: event.signal });
   }
 
   private setState(state: ServiceState) {

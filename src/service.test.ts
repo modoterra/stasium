@@ -1,51 +1,51 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { normalizeProcessDefinition } from "./process-definition";
-import { setPathReaderForTests, resetPathCacheForTests } from "./service";
 import { ServiceManager } from "./service-manager";
 
-const waitFor = async (
-  predicate: () => boolean,
-  timeoutMs = 2000,
-  intervalMs = 25,
-): Promise<boolean> => {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return true;
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-  return predicate();
-};
-
-afterEach(() => {
-  resetPathCacheForTests();
-});
-
-describe("service PATH cache", () => {
-  test("reads PATH from the shell once per app session", async () => {
-    let reads = 0;
-    setPathReaderForTests(async () => {
-      reads += 1;
-      return process.env.PATH ?? "";
+describe("ServiceManager launch execution", () => {
+  test("shares one Launch Instruction execution Adapter across managed processes", async () => {
+    let pathReads = 0;
+    const spawned: string[][] = [];
+    const launchAdapter = new LaunchInstructionExecutionAdapter({
+      pathReader: async () => {
+        pathReads += 1;
+        return process.env.PATH ?? "";
+      },
+      processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
+      spawner: (options) => {
+        spawned.push(options.cmd);
+        return {
+          pid: spawned.length,
+          stdout: null,
+          stderr: null,
+          exited: new Promise(() => {}),
+          signalCode: null,
+          kill: () => {},
+        };
+      },
     });
 
-    const manager = new ServiceManager([
-      normalizeProcessDefinition({
-        name: "api",
-        command: ["bun", "-e", "setInterval(() => {}, 1000)"],
-      }),
-      normalizeProcessDefinition({
-        name: "worker",
-        command: ["bun", "-e", "setInterval(() => {}, 1000)"],
-      }),
-    ]);
+    const manager = new ServiceManager(
+      [
+        normalizeProcessDefinition({
+          name: "api",
+          command: ["bun", "run", "dev"],
+        }),
+        normalizeProcessDefinition({
+          name: "worker",
+          command: ["bun", "run", "worker"],
+        }),
+      ],
+      { launchAdapter },
+    );
 
-    try {
-      await manager.startAll();
-      const started = await waitFor(() => manager.getServicePids().length === 2);
-      expect(started).toBe(true);
-      expect(reads).toBe(1);
-    } finally {
-      await manager.stopAll();
-    }
+    await manager.startAll();
+
+    expect(pathReads).toBe(1);
+    expect(spawned).toEqual([
+      ["bun", "run", "dev"],
+      ["bun", "run", "worker"],
+    ]);
   });
 });

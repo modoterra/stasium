@@ -1,4 +1,5 @@
 import { LogBuffer } from "./log-buffer";
+import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { type ServiceEvent, ServiceProcess } from "./service";
 import { ServiceGraphError, getDependencyClosure, getDependentsClosure } from "./service-graph";
 import { StartupDependencyPlanError, planStartupDependencies } from "./startup-dependency-plan";
@@ -15,6 +16,10 @@ export interface ServiceView {
 }
 
 export type UpdateCallback = () => void;
+
+export interface ServiceManagerOptions {
+  launchAdapter?: LaunchInstructionExecutionAdapter;
+}
 
 const LOG_CAPACITY = 2000;
 const WAIT_INTERVAL_MS = 50;
@@ -39,14 +44,16 @@ export class ServiceManager {
   private readonly restartAttempts: Map<ServiceProcess, number> = new Map();
   private readonly restartDeadlines: Map<ServiceProcess, number> = new Map();
   private readonly runStableTimers: Map<ServiceProcess, ReturnType<typeof setTimeout>> = new Map();
+  private readonly launchAdapter: LaunchInstructionExecutionAdapter;
   private restartTicker: ReturnType<typeof setInterval> | null = null;
   private readonly updateCallbacks: Set<UpdateCallback> = new Set();
   private readonly processCallbacks: Set<UpdateCallback> = new Set();
   private selectedIndex = 0;
 
-  constructor(configs: ServiceConfig[]) {
+  constructor(configs: ServiceConfig[], options: ServiceManagerOptions = {}) {
     this.assertValidConfigGraph(configs);
-    this.services = configs.map((config) => new ServiceProcess(config));
+    this.launchAdapter = options.launchAdapter ?? new LaunchInstructionExecutionAdapter();
+    this.services = configs.map((config) => new ServiceProcess(config, this.launchAdapter));
     this.views = this.services.map((service) => ({
       name: service.config.name,
       state: "STOPPED",
@@ -204,7 +211,7 @@ export class ServiceManager {
 
     this.assertValidConfigGraph([...this.getConfigs(), config]);
 
-    const process = new ServiceProcess(config);
+    const process = new ServiceProcess(config, this.launchAdapter);
     this.services.push(process);
     this.views.push({
       name: config.name,
@@ -264,7 +271,7 @@ export class ServiceManager {
     this.clearServiceRuntimeState(oldService);
     this.unsubscribers[index]?.();
 
-    const newProcess = new ServiceProcess(config);
+    const newProcess = new ServiceProcess(config, this.launchAdapter);
     this.services[index] = newProcess;
 
     const view = this.views[index];
