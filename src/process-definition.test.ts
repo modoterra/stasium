@@ -33,6 +33,7 @@ describe("process definition normalization", () => {
     });
 
     expect(definition).toMatchObject({
+      workingDir: resolve(process.cwd(), "."),
       environment: {},
       launchInstruction: { executable: "bun", arguments: ["--version"] },
       startupDependencies: [],
@@ -46,6 +47,15 @@ describe("process definition normalization", () => {
         name: "api",
         launchInstruction: ["bun", "--version"],
         startupDependencies: [""],
+      }),
+    ).toThrow(ProcessDefinitionError);
+  });
+
+  test("rejects invalid Launch Instructions before runtime callers see them", () => {
+    expect(() =>
+      normalizeProcessDefinition({
+        name: "api",
+        launchInstruction: "bun run api && bun run worker",
       }),
     ).toThrow(ProcessDefinitionError);
   });
