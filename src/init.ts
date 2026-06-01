@@ -8,7 +8,7 @@ import {
 import type { DetectResult as DiscoveryDetectResult } from "./discovery";
 import { saveManifest } from "./manifest";
 import { formatCommandSpec } from "./shared";
-import type { AppConfig, ServiceConfig } from "./types";
+import type { AppConfig, ProcessDefinition } from "./types";
 
 export type DetectResult = DiscoveryDetectResult;
 
@@ -26,18 +26,21 @@ export const detectServices = async (cwd: string): Promise<DetectResult> => {
 
 export const getDefaultServices = (
   detected: DetectResult,
-): { services: ServiceConfig[]; warnings: string[] } => {
+): { services: ProcessDefinition[]; warnings: string[] } => {
   const defaults = detected.candidates.filter((candidate) => candidate.defaultSelected);
   return finalizeSelectedCandidates(defaults);
 };
 
 export const writeManifest = async (
   manifestPath: string,
-  services: ServiceConfig[],
+  services: ProcessDefinition[],
   app?: AppConfig,
 ): Promise<void> => {
   await saveManifest(manifestPath, services, app);
 };
 
-export const formatServiceSummary = (service: ServiceConfig): string =>
-  `${service.name}: ${formatCommandSpec(service.command)}`;
+export const formatServiceSummary = (processDefinition: ProcessDefinition): string =>
+  `${processDefinition.name}: ${formatCommandSpec([
+    processDefinition.launchInstruction.executable,
+    ...processDefinition.launchInstruction.arguments,
+  ])}`;

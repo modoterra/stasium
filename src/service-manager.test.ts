@@ -96,7 +96,7 @@ describe("ServiceManager", () => {
 
   test("rejects duplicate names when editing services", async () => {
     const manager = new ServiceManager([makeConfig("api"), makeConfig("worker")]);
-    await expect(manager.updateServiceConfig(0, makeConfig("worker"))).rejects.toThrow(
+    await expect(manager.updateProcessDefinition(0, makeConfig("worker"))).rejects.toThrow(
       ServiceManagerError,
     );
   });

@@ -277,7 +277,7 @@ export class ServiceManager {
     return true;
   }
 
-  async updateServiceConfig(index: number, config: ProcessDefinition): Promise<void> {
+  async updateProcessDefinition(index: number, config: ProcessDefinition): Promise<void> {
     const oldService = this.services[index];
     if (!oldService) return;
 
