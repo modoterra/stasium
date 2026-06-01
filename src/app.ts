@@ -17,7 +17,7 @@ import { getTopologicalServiceOrder } from "./service-graph";
 import { ServiceManager } from "./service-manager";
 import { fileExists, getErrorMessage } from "./shared";
 import { createShutdownHandler } from "./shutdown";
-import type { AppConfig, PanelId, Shortcut } from "./types";
+import type { AppConfig, Shortcut } from "./types";
 import { type UiControls, buildInitUi, buildUi } from "./ui";
 
 const MANIFEST_PATH = "stasium.toml";
@@ -40,12 +40,6 @@ type MainUiSession = {
   controls: UiControls;
   focusManager: FocusManager;
   externalRuntimeManager: ExternalRuntimeVisibilityManager | null;
-};
-
-type MainUiSnapshot = {
-  activePanel: PanelId;
-  visiblePanels: PanelId[];
-  logsFollowTail: boolean;
 };
 
 const setupInitSelectionKeybindings = (
@@ -675,33 +669,6 @@ const setupKeybindings = (
 const isExternalRuntimeVisibilityEnabled = (appConfig: AppConfig | undefined): boolean =>
   appConfig?.docker?.enabled ?? true;
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
-const captureMainUiSnapshot = (session: MainUiSession): MainUiSnapshot => ({
-  activePanel: session.focusManager.getActivePanel(),
-  visiblePanels: session.focusManager.getVisiblePanels(),
-  logsFollowTail: session.controls.getLogsFollowTail(),
-});
-
-const restoreMainUiSnapshot = (
-  focusManager: FocusManager,
-  controls: UiControls,
-  snapshot: MainUiSnapshot,
-): void => {
-  for (const panel of focusManager.getVisiblePanels()) {
-    if (!snapshot.visiblePanels.includes(panel)) {
-      focusManager.togglePanel(panel);
-    }
-  }
-
-  if (focusManager.isPanelVisible(snapshot.activePanel)) {
-    focusManager.setActivePanel(snapshot.activePanel);
-  }
-
-  controls.setLogsFollowTail(snapshot.logsFollowTail);
-  controls.renderAll();
-};
-
 const mountMainUiSession = (
   renderer: Awaited<ReturnType<typeof createCliRenderer>>,
   teardownRef: { current: (() => void) | null },
@@ -712,7 +679,6 @@ const mountMainUiSession = (
   manifest: Awaited<ReturnType<typeof loadManifest>>,
   appConfig: AppConfig | undefined,
   externalRuntimeManager: ExternalRuntimeVisibilityManager | null,
-  snapshot?: MainUiSnapshot,
 ): MainUiSession => {
   const focusManager = new FocusManager(externalRuntimeManager !== null);
   const { teardown, controls } = buildUi({
@@ -740,11 +706,7 @@ const mountMainUiSession = (
     new ProcessClaimStore(process.cwd(), { logger: (message) => console.error(message) }),
   );
 
-  if (snapshot) {
-    restoreMainUiSnapshot(focusManager, controls, snapshot);
-  } else {
-    controls.renderAll();
-  }
+  controls.renderAll();
 
   if (externalRuntimeManager && !runtime.closing && !runtime.disposed) {
     externalRuntimeManager.startPolling();
@@ -768,9 +730,17 @@ const startApp = async (
   const processClaimStore = new ProcessClaimStore(process.cwd(), {
     logger: (message) => console.error(message),
   });
-  const manager = new ServiceManager(manifest.services, { processClaimStore });
   const appConfig = manifest.app;
   const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
+  const externalRuntimes = isExternalRuntimeVisibilityEnabled(appConfig)
+    ? await detectExternalRuntimes(process.cwd(), [createDockerComposeExternalRuntimeAdapter()])
+    : [];
+  const externalRuntimeManager =
+    externalRuntimes.length > 0 ? new ExternalRuntimeVisibilityManager(externalRuntimes) : null;
+  const manager = new ServiceManager(manifest.services, {
+    processClaimStore,
+    externalRuntimeManager,
+  });
 
   shutdownRef.current?.uninstall();
   const shutdown = createShutdownHandler({
@@ -782,19 +752,17 @@ const startApp = async (
   shutdown.install();
   shutdownRef.current = shutdown;
 
-  const sessionRef: { current: MainUiSession | null } = {
-    current: mountMainUiSession(
-      renderer,
-      teardownRef,
-      runtime,
-      shutdown,
-      manifestPath,
-      manager,
-      manifest,
-      appConfig,
-      null,
-    ),
-  };
+  mountMainUiSession(
+    renderer,
+    teardownRef,
+    runtime,
+    shutdown,
+    manifestPath,
+    manager,
+    manifest,
+    appConfig,
+    externalRuntimeManager,
+  );
 
   void (async () => {
     try {
@@ -806,46 +774,6 @@ const startApp = async (
       await manager.startAll({
         shouldCancel: () => runtime.closing || runtime.disposed,
       });
-      if (runtime.closing || runtime.disposed) return;
-
-      if (runtime.closing || runtime.disposed || !isExternalRuntimeVisibilityEnabled(appConfig)) {
-        return;
-      }
-
-      const externalRuntimes = await detectExternalRuntimes(process.cwd(), [
-        createDockerComposeExternalRuntimeAdapter(),
-      ]);
-      if (runtime.closing || runtime.disposed || externalRuntimes.length === 0) return;
-
-      while (
-        !runtime.closing &&
-        !runtime.disposed &&
-        sessionRef.current?.focusManager.getMode() !== "normal"
-      ) {
-        await sleep(50);
-      }
-      if (runtime.closing || runtime.disposed) return;
-
-      const externalRuntimeManager = new ExternalRuntimeVisibilityManager(externalRuntimes);
-      if (runtime.closing || runtime.disposed) {
-        await externalRuntimeManager.destroy();
-        return;
-      }
-      const snapshot = sessionRef.current ? captureMainUiSnapshot(sessionRef.current) : undefined;
-
-      sessionRef.current?.teardown();
-      sessionRef.current = mountMainUiSession(
-        renderer,
-        teardownRef,
-        runtime,
-        shutdown,
-        manifestPath,
-        manager,
-        manifest,
-        appConfig,
-        externalRuntimeManager,
-        snapshot,
-      );
     } catch (error) {
       console.error(getErrorMessage(error));
     }

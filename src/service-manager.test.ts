@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
+import { ExternalRuntimeVisibilityManager, type ExternalRuntime } from "./external-runtime";
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
 import { ProcessClaimStore } from "./process-claim";
 import { ServiceManager, ServiceManagerError } from "./service-manager";
-import type { ServiceConfig, ServicePid } from "./types";
+import type { ExternalManagedProcess, LogEntry, ServiceConfig, ServicePid } from "./types";
 
 const service = (input: ProcessDefinitionInput): ServiceConfig => normalizeProcessDefinition(input);
 
@@ -37,6 +38,54 @@ const waitFor = async (
   }
   return predicate();
 };
+
+const launchLongRunningPid = (pid: number): LaunchInstructionExecutionAdapter =>
+  new LaunchInstructionExecutionAdapter({
+    now: () => "now",
+    pathReader: async () => process.env.PATH ?? "",
+    processInfoReader: async (nextPid) => ({ pid: nextPid, startedAt: "started", command: null }),
+    spawner: () => ({
+      pid,
+      stdout: null,
+      stderr: null,
+      exited: new Promise(() => {}),
+      signalCode: null,
+      kill: () => {},
+    }),
+  });
+
+const externalProcess = (
+  name: string,
+  state: ExternalManagedProcess["state"],
+): ExternalManagedProcess => ({
+  runtimeId: "docker-compose",
+  runtimeName: "Docker Compose",
+  name,
+  state,
+  status: state,
+  ports: "",
+});
+
+const externalRuntime = (
+  getProcesses: () => ExternalManagedProcess[],
+  actions: string[] = [],
+): ExternalRuntime => ({
+  id: "docker-compose",
+  name: "Docker Compose",
+  snapshot: async () => getProcesses(),
+  isAvailable: (process) => process.state === "running",
+  start: async (name) => {
+    actions.push(`start:${name}`);
+  },
+  stop: async (name) => {
+    actions.push(`stop:${name}`);
+  },
+  restart: async (name) => {
+    actions.push(`restart:${name}`);
+  },
+  streamOutput: (_name: string, _onOutput: (entry: LogEntry) => void) => null,
+  destroy: async () => {},
+});
 
 describe("ServiceManager", () => {
   test("rejects duplicate names when adding services", async () => {
@@ -72,6 +121,68 @@ describe("ServiceManager", () => {
     expect(pids.includes("api")).toBe(true);
 
     await manager.stopAll();
+  });
+
+  test("starts unavailable External Managed Process dependencies before direct processes", async () => {
+    const actions: string[] = [];
+    const claims: string[] = [];
+    class TestClaims extends ProcessClaimStore {
+      override async claimDirectManagedProcess(claim: ServicePid): Promise<void> {
+        claims.push(claim.name);
+      }
+    }
+    let dbState: ExternalManagedProcess["state"] = "exited";
+    const runtime = externalRuntime(() => [externalProcess("db", dbState)], actions);
+    const originalStart = runtime.start!;
+    runtime.start = async (name) => {
+      await originalStart(name);
+      dbState = "running";
+    };
+    const externalRuntimeManager = new ExternalRuntimeVisibilityManager([runtime]);
+    const manager = new ServiceManager(
+      [
+        service({
+          name: "api",
+          command: ["bun", "run", "dev"],
+          depends_on: ["db"],
+        }),
+      ],
+      {
+        externalRuntimeManager,
+        launchAdapter: launchLongRunningPid(20),
+        processClaimStore: new TestClaims(process.cwd()),
+      },
+    );
+
+    await manager.startAll();
+
+    expect(actions).toEqual(["start:db"]);
+    expect(claims).toEqual(["api"]);
+    expect(manager.getSelectedView()?.state).toBe("RUNNING");
+    expect(manager.getServicePids()).toHaveLength(1);
+  });
+
+  test("blocks direct processes when External Managed Process dependencies stay unavailable", async () => {
+    const actions: string[] = [];
+    const externalRuntimeManager = new ExternalRuntimeVisibilityManager([
+      externalRuntime(() => [externalProcess("db", "exited")], actions),
+    ]);
+    const manager = new ServiceManager(
+      [
+        service({
+          name: "api",
+          command: ["bun", "run", "dev"],
+          depends_on: ["db"],
+        }),
+      ],
+      { externalRuntimeManager, launchAdapter: launchLongRunningPid(21) },
+    );
+
+    await manager.startAll();
+
+    expect(actions).toEqual(["start:db"]);
+    expect(manager.getSelectedView()?.state).toBe("BLOCKED");
+    expect(manager.getServicePids()).toHaveLength(0);
   });
 
   test("stops selected dependency and its dependents", async () => {

@@ -228,6 +228,10 @@ class DockerComposeExternalRuntime implements ExternalRuntime {
     await this.runCompose(["up", "-d", name]);
   }
 
+  isAvailable(process: ExternalManagedProcess): boolean {
+    return process.state === "running";
+  }
+
   async stop(name: string): Promise<void> {
     await this.runCompose(["stop", name]);
   }
