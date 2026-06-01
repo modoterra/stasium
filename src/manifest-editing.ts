@@ -1,10 +1,11 @@
 import { dirname } from "node:path";
 import { finalizeSelection, type DiscoverySelection } from "./discovery";
 import { DirectManagedProcessCollectionLifecycle } from "./direct-managed-process-collection";
+import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { parseServiceBlock, saveManifest } from "./manifest";
 import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
 import type { ProcessClaimStore } from "./process-claim";
-import { getTopologicalServiceOrder } from "./service-graph";
+import { getTopologicalServiceOrder, type ServiceGraphOptions } from "./service-graph";
 import type { ServiceManager } from "./service-manager";
 import { getErrorMessage } from "./shared";
 import type { AppConfig, ProcessDefinition } from "./types";
@@ -14,6 +15,7 @@ export interface ManifestEditingContext {
   appConfig?: AppConfig;
   manager: ServiceManager;
   processClaimStore: ProcessClaimStore;
+  externalRuntimeManager?: ExternalRuntimeVisibilityManager | null;
 }
 
 export interface ManifestEditingResult {
@@ -91,10 +93,13 @@ export const addSelectedDiscoveryCandidates = async (
   }
 
   const nextConfigs = [...context.manager.getConfigs(), ...finalized.services];
-  validateNextCollection(nextConfigs);
+  validateNextCollection(context, nextConfigs);
 
   const pendingByName = new Map(finalized.services.map((service) => [service.name, service]));
-  const orderedNames = getTopologicalServiceOrder(nextConfigs);
+  const orderedNames = getTopologicalServiceOrder(
+    nextConfigs,
+    dependencyValidationOptions(context),
+  );
 
   const result = await applyManifestEdit(context, {
     nextConfigs,
@@ -113,7 +118,7 @@ const applyManifestEdit = async (
   context: ManifestEditingContext,
   transaction: ManifestEditTransaction,
 ): Promise<ManifestEditingResult> => {
-  validateNextCollection(transaction.nextConfigs);
+  validateNextCollection(context, transaction.nextConfigs);
   await saveManifest(context.manifestPath, transaction.nextConfigs, context.appConfig);
   await transaction.apply();
 
@@ -132,6 +137,24 @@ const applyManifestEdit = async (
   return { services: context.manager.getConfigs(), warnings };
 };
 
-const validateNextCollection = (services: ProcessDefinition[]): void => {
-  new DirectManagedProcessCollectionLifecycle(() => services).validate(services);
+const validateNextCollection = (
+  context: ManifestEditingContext,
+  services: ProcessDefinition[],
+): void => {
+  new DirectManagedProcessCollectionLifecycle(
+    () => services,
+    dependencyValidationOptions(context),
+  ).validate(services);
+};
+
+const dependencyValidationOptions = (context: ManifestEditingContext): ServiceGraphOptions => {
+  const externalManagedProcessNames = context.externalRuntimeManager
+    ?.getProcesses()
+    .flatMap((process) => [process.name, `${process.runtimeId}:${process.name}`]);
+
+  return {
+    startupDependencyValidation: externalManagedProcessNames
+      ? { mode: "cross-runtime", externalManagedProcessNames }
+      : { mode: "direct-only" },
+  };
 };
