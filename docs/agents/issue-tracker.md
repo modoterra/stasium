@@ -1,10 +1,17 @@
-# Issue tracker: GitHub
+# Issue tracker: GitHub Issues + GitHub Project
 
 Issues and PRDs for this repo live as GitHub issues. Use the `gh` CLI for all operations.
 
+Newly created issues and PRDs must also be added to the `Stasium` GitHub Project:
+
+- Project owner: `modoterra`
+- Project number: `1`
+- Project URL: `https://github.com/orgs/modoterra/projects/1`
+
 ## Conventions
 
-- **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
+- **Create an issue**: `gh issue create --title "..." --body "..."`. Use `--body-file` for multi-line bodies and capture the printed issue URL.
+- **Add created issue to Project**: `gh project item-add 1 --owner modoterra --url "$ISSUE_URL"`, where `$ISSUE_URL` is the URL returned by `gh issue create`.
 - **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
@@ -15,7 +22,16 @@ Infer the repo from `git remote -v` -- `gh` does this automatically when run ins
 
 ## When a skill says "publish to the issue tracker"
 
-Create a GitHub issue.
+Create a GitHub issue, then add it to the `Stasium` GitHub Project.
+
+Preferred command shape:
+
+```sh
+ISSUE_URL=$(gh issue create --title "..." --body-file /tmp/issue-body.md)
+gh project item-add 1 --owner modoterra --url "$ISSUE_URL"
+```
+
+For multiple issues, repeat both steps for each issue. Do not leave newly created issues outside the Project unless the user explicitly asks for GitHub Issues only.
 
 ## When a skill says "fetch the relevant ticket"
 

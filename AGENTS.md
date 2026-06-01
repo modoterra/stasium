@@ -36,7 +36,7 @@ Git history follows Conventional Commits such as `fix: ...`, `feat: ...`, and `c
 
 ### Issue tracker
 
-Issues and PRDs are tracked in GitHub Issues for `modoterra/stasium`. See `docs/agents/issue-tracker.md`.
+Issues and PRDs are tracked in GitHub Issues for `modoterra/stasium` and organized in the `Stasium` GitHub Project. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
