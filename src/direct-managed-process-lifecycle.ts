@@ -135,3 +135,33 @@ export class DirectManagedProcessLifecycle {
     this.runStableTimer = null;
   }
 }
+
+export class DirectManagedProcessLifecycleCollection<TProcess> {
+  private readonly lifecycles = new Map<TProcess, DirectManagedProcessLifecycle>();
+
+  set(process: TProcess, lifecycle: DirectManagedProcessLifecycle): void {
+    this.lifecycles.set(process, lifecycle);
+  }
+
+  get(process: TProcess): DirectManagedProcessLifecycle | null {
+    return this.lifecycles.get(process) ?? null;
+  }
+
+  delete(process: TProcess): void {
+    this.lifecycles.delete(process);
+  }
+
+  hasPendingRestart(): boolean {
+    return [...this.lifecycles.values()].some((lifecycle) => lifecycle.hasPendingRestart());
+  }
+
+  tick(getView: (process: TProcess) => RestartRuleLifecycleView | null, now: number): boolean {
+    let changed = false;
+    for (const [process, lifecycle] of this.lifecycles.entries()) {
+      const view = getView(process);
+      if (!view) continue;
+      changed = lifecycle.tick(view, now) || changed;
+    }
+    return changed;
+  }
+}
