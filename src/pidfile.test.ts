@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { afterEach, describe, expect, test } from "bun:test";
 import { readLiveProcessInfo } from "./process-info";
-import { cleanupExistingPids, setPidDirRootForTests, syncPidFiles } from "./pidfile";
+import { cleanupExistingPids, setPidDirRootForTests, writePidFiles } from "./pidfile";
 import { normalizeProcessDefinition } from "./process-definition";
 import { ProcessClaimStore } from "./process-claim";
 import { ServiceManager } from "./service-manager";
@@ -67,7 +67,7 @@ const spawnIdleProcess = () =>
   });
 
 describe("pidfile cleanup", () => {
-  test("syncPidFiles writes structured launch identity for running services", async () => {
+  test("writePidFiles writes structured launch identity for running services", async () => {
     if (process.platform === "win32") return;
 
     const { cwd, pidDir } = await createTestCwd();
@@ -89,7 +89,7 @@ describe("pidfile cleanup", () => {
         throw new Error("Expected running service metadata.");
       }
 
-      await syncPidFiles(cwd, manager.getServicePids());
+      await writePidFiles(cwd, manager.getServicePids());
       const contents = await readFile(resolve(pidDir, "api.pid"), "utf8");
       const parsed = JSON.parse(contents) as {
         pid: number;
@@ -108,6 +108,47 @@ describe("pidfile cleanup", () => {
       expect(parsed.identityVerified).toBe(true);
     } finally {
       await manager.stopAll();
+    }
+  });
+
+  test("cleanupExistingPids stops matching live process claims", async () => {
+    if (process.platform === "win32") return;
+
+    const { cwd, pidDir } = await createTestCwd();
+    const proc = spawnIdleProcess();
+
+    try {
+      const liveInfo = await readLiveProcessInfo(proc.pid);
+      expect(liveInfo).not.toBeNull();
+      if (!liveInfo) {
+        throw new Error("Expected live process info.");
+      }
+      await mkdir(pidDir, { recursive: true });
+      await writeFile(
+        resolve(pidDir, "api.pid"),
+        JSON.stringify({
+          version: 1,
+          pid: proc.pid,
+          service: "api",
+          cwd,
+          command: liveInfo.command
+            ? [liveInfo.command]
+            : ["bun", "-e", "setInterval(() => {}, 1000)"],
+          startedAt: liveInfo.startedAt,
+          identityVerified: true,
+          platform: process.platform,
+        }),
+      );
+
+      await cleanupExistingPids(cwd, { knownServices: ["api"] });
+
+      expect(isProcessAlive(proc.pid)).toBe(false);
+      await expect(access(resolve(pidDir, "api.pid"))).rejects.toThrow();
+    } finally {
+      if (isProcessAlive(proc.pid)) {
+        process.kill(proc.pid, "SIGKILL");
+      }
+      await proc.exited;
     }
   });
 
