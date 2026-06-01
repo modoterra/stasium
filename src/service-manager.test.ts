@@ -4,6 +4,7 @@ import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
 import { ProcessClaimStore } from "./process-claim";
 import { ServiceManager, ServiceManagerError } from "./service-manager";
+import { planStartupDependencies } from "./startup-dependency-plan";
 import type { ExternalManagedProcess, LogEntry, ProcessDefinition, ServicePid } from "./types";
 
 const service = (input: ProcessDefinitionInput): ProcessDefinition =>
@@ -417,10 +418,18 @@ describe("ServiceManager", () => {
       ],
       { launchAdapter },
     );
+    const expectedPlanState = planStartupDependencies(manager.getConfigs()).blockedStatesFor([
+      "db",
+    ])[0];
 
     await manager.startAll();
 
     expect(manager.getViews()[1]?.state).toBe("BLOCKED");
+    expect(expectedPlanState).toMatchObject({
+      name: "api",
+      state: "BLOCKED",
+      blockedBy: ["db"],
+    });
     expect(manager.getViews()[1]?.log.all().at(-1)?.line).toBe(
       'Startup blocked by failed Startup Dependency "db".',
     );
