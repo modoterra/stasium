@@ -9,7 +9,7 @@ import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { ProcessClaimStore } from "./process-claim";
 import { type ServiceEvent, ServiceProcess } from "./service";
 import { ServiceGraphError } from "./service-graph";
-import { StartupDependencyPlanError } from "./startup-dependency-plan";
+import { StartupDependencyPlanError, planStartupDependencies } from "./startup-dependency-plan";
 import type { ProcessDefinition, ServicePid, ServiceState } from "./types";
 
 export interface ServiceView {
@@ -451,14 +451,28 @@ export class ServiceManager {
 
   private async startServiceUnlessBlocked(service: ServiceProcess): Promise<void> {
     const blockedBy = await this.getUnavailableDependencies(service.config);
-    if (blockedBy.length > 0) {
+    const blockedState = this.getPlannedBlockedState(service.config.name, blockedBy);
+    if (blockedState) {
       service.block(
-        `Startup blocked by failed Startup Dependency ${blockedBy.map((name) => `"${name}"`).join(", ")}.`,
+        `Startup blocked by failed Startup Dependency ${blockedState.blockedBy
+          .map((name) => `"${name}"`)
+          .join(", ")}.`,
       );
       return;
     }
 
     await this.startService(service);
+  }
+
+  private getPlannedBlockedState(name: string, blockedBy: string[]) {
+    if (blockedBy.length === 0) return null;
+    return this.runGraphOperation(() =>
+      planStartupDependencies(this.getConfigs(), {
+        allowExternalDependencies: this.externalRuntimeManager !== null,
+      })
+        .blockedStatesFor(blockedBy)
+        .find((state) => state.name === name),
+    );
   }
 
   private async getUnavailableDependencies(config: ProcessDefinition): Promise<string[]> {

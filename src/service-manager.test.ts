@@ -398,6 +398,50 @@ describe("ServiceManager", () => {
     expect(launched).toEqual(["missing"]);
   });
 
+  test("derives cascading blocked state from the Startup Dependency plan", async () => {
+    const launched: string[] = [];
+    const launchAdapter = new LaunchInstructionExecutionAdapter({
+      now: () => "now",
+      pathReader: async () => process.env.PATH ?? "",
+      spawner: (options) => {
+        launched.push(options.cmd[0] ?? "");
+        if (options.cmd[0] === "missing") throw new Error("missing executable");
+        return {
+          pid: 1,
+          stdout: null,
+          stderr: null,
+          exited: new Promise(() => {}),
+          signalCode: null,
+          kill: () => {},
+        };
+      },
+    });
+    const manager = new ServiceManager(
+      [
+        service({ name: "db", launchInstruction: ["missing"] }),
+        service({
+          name: "api",
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["db"],
+        }),
+        service({
+          name: "worker",
+          launchInstruction: ["bun", "run", "worker"],
+          startupDependencies: ["api"],
+        }),
+      ],
+      { launchAdapter },
+    );
+
+    await manager.startAll();
+
+    expect(manager.getViews().map((view) => view.state)).toEqual(["FAILED", "BLOCKED", "BLOCKED"]);
+    expect(manager.getViews()[2]?.log.all().at(-1)?.line).toBe(
+      'Startup blocked by failed Startup Dependency "api".',
+    );
+    expect(launched).toEqual(["missing"]);
+  });
+
   test("tracks manual restarts separately from automatic Restart Rule attempts", async () => {
     const manager = new ServiceManager([
       service({
