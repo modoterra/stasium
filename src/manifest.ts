@@ -43,6 +43,10 @@ export class ManifestError extends Error {
   }
 }
 
+export interface LoadManifestOptions {
+  externalManagedProcessNames?: Iterable<string>;
+}
+
 const validServiceKeys = new Set([
   "name",
   "command",
@@ -178,7 +182,10 @@ const toManifestError = (error: unknown): never => {
   throw error;
 };
 
-export const loadManifest = async (path?: string): Promise<Manifest> => {
+export const loadManifest = async (
+  path?: string,
+  options: LoadManifestOptions = {},
+): Promise<Manifest> => {
   const manifestPath = path ?? DEFAULT_MANIFEST;
   const file = Bun.file(manifestPath);
   if (!(await file.exists())) {
@@ -210,7 +217,14 @@ export const loadManifest = async (path?: string): Promise<Manifest> => {
   })();
 
   try {
-    validateServiceGraph(normalized);
+    validateServiceGraph(normalized, {
+      startupDependencyValidation: options.externalManagedProcessNames
+        ? {
+            mode: "cross-runtime",
+            externalManagedProcessNames: options.externalManagedProcessNames,
+          }
+        : { mode: "direct-only" },
+    });
   } catch (error) {
     toManifestError(error);
   }

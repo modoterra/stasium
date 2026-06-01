@@ -195,4 +195,28 @@ describe("manifest rendering", () => {
       await rm(dir, { recursive: true, force: true });
     }
   });
+
+  test("accepts Startup Dependencies satisfied by External Runtime Visibility", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-manifest-"));
+    const manifestPath = join(dir, "stasium.toml");
+    await Bun.write(
+      manifestPath,
+      [
+        "[[service]]",
+        'name = "api"',
+        'command = ["bun", "run", "dev"]',
+        'depends_on = ["docker:db"]',
+      ].join("\n"),
+    );
+
+    try {
+      const manifest = await loadManifest(manifestPath, {
+        externalManagedProcessNames: ["docker:db"],
+      });
+
+      expect(manifest.services[0]?.startupDependencies).toEqual(["docker:db"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
 });
