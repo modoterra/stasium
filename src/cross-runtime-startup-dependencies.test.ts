@@ -152,7 +152,7 @@ describe("cross-runtime Startup Dependencies", () => {
     );
   });
 
-  test("claims only Direct Managed Processes when Startup starts an external dependency", async () => {
+  test("claims only Direct Managed Processes and cleans up external session starts", async () => {
     const actions: string[] = [];
     let dbState: ExternalManagedProcess["state"] = "exited";
     const runtime = externalRuntime(() => [externalProcess("db", dbState)], actions);
@@ -174,8 +174,9 @@ describe("cross-runtime Startup Dependencies", () => {
     );
 
     await manager.startAll();
+    await externalRuntimeManager.stopSessionStartedProcesses();
 
-    expect(actions).toEqual(["start:db"]);
+    expect(actions).toEqual(["start:db", "stop:db"]);
     expect(claims.claims).toEqual(["api"]);
     expect(manager.getSelectedView()?.state).toBe("RUNNING");
   });
