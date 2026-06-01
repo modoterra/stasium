@@ -6,6 +6,7 @@ import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./proce
 import type { ProcessClaimStore } from "./process-claim";
 import { getTopologicalServiceOrder } from "./service-graph";
 import type { ServiceManager } from "./service-manager";
+import { getErrorMessage } from "./shared";
 import type { AppConfig, ServiceConfig } from "./types";
 
 export interface ManifestEditingContext {
@@ -20,15 +21,23 @@ export interface ManifestEditingResult {
   warnings: string[];
 }
 
+interface ManifestEditTransaction {
+  nextConfigs: ServiceConfig[];
+  apply: () => Promise<void>;
+  releaseClaimNames?: string[];
+}
+
 export const addProcessDefinition = async (
   context: ManifestEditingContext,
   input: ProcessDefinitionInput,
 ): Promise<ManifestEditingResult> => {
   const config = normalizeProcessDefinition(input, { baseDir: dirname(context.manifestPath) });
-  validateNextCollection([...context.manager.getConfigs(), config]);
-  await context.manager.addService(config);
-  await persist(context);
-  return { services: context.manager.getConfigs(), warnings: [] };
+  return applyManifestEdit(context, {
+    nextConfigs: [...context.manager.getConfigs(), config],
+    apply: async () => {
+      await context.manager.addService(config);
+    },
+  });
 };
 
 export const replaceProcessDefinition = async (
@@ -42,15 +51,13 @@ export const replaceProcessDefinition = async (
     .getConfigs()
     .map((entry, entryIndex) => (entryIndex === index ? config : entry));
 
-  validateNextCollection(nextConfigs);
-  await context.manager.updateServiceConfig(index, config);
-  await persist(context);
-
-  if (previousName && previousName !== config.name) {
-    await context.processClaimStore.releaseDirectManagedProcessNames([previousName]);
-  }
-
-  return { services: context.manager.getConfigs(), warnings: [] };
+  return applyManifestEdit(context, {
+    nextConfigs,
+    apply: async () => {
+      await context.manager.updateServiceConfig(index, config);
+    },
+    releaseClaimNames: previousName && previousName !== config.name ? [previousName] : [],
+  });
 };
 
 export const removeSelectedProcessDefinition = async (
@@ -61,13 +68,13 @@ export const removeSelectedProcessDefinition = async (
     .getConfigs()
     .filter((_, index) => index !== context.manager.getSelectedIndex());
 
-  validateNextCollection(nextConfigs);
-  await context.manager.removeSelected();
-  await persist(context);
-
-  if (removedName) await context.processClaimStore.releaseDirectManagedProcessNames([removedName]);
-
-  return { services: context.manager.getConfigs(), warnings: [] };
+  return applyManifestEdit(context, {
+    nextConfigs,
+    apply: async () => {
+      await context.manager.removeSelected();
+    },
+    releaseClaimNames: removedName ? [removedName] : [],
+  });
 };
 
 export const addSelectedDiscoveryCandidates = async (
@@ -89,20 +96,42 @@ export const addSelectedDiscoveryCandidates = async (
   const pendingByName = new Map(finalized.services.map((service) => [service.name, service]));
   const orderedNames = getTopologicalServiceOrder(nextConfigs);
 
-  for (const serviceName of orderedNames) {
-    const service = pendingByName.get(serviceName);
-    if (!service) continue;
-    await context.manager.addService(service);
+  const result = await applyManifestEdit(context, {
+    nextConfigs,
+    apply: async () => {
+      for (const serviceName of orderedNames) {
+        const service = pendingByName.get(serviceName);
+        if (!service) continue;
+        await context.manager.addService(service);
+      }
+    },
+  });
+  return { ...result, warnings: finalized.warnings };
+};
+
+const applyManifestEdit = async (
+  context: ManifestEditingContext,
+  transaction: ManifestEditTransaction,
+): Promise<ManifestEditingResult> => {
+  validateNextCollection(transaction.nextConfigs);
+  await saveManifest(context.manifestPath, transaction.nextConfigs, context.appConfig);
+  await transaction.apply();
+
+  const warnings: string[] = [];
+
+  if (transaction.releaseClaimNames && transaction.releaseClaimNames.length > 0) {
+    try {
+      await context.processClaimStore.releaseDirectManagedProcessNames(
+        transaction.releaseClaimNames,
+      );
+    } catch (error) {
+      warnings.push(`Failed to release Process Claims: ${getErrorMessage(error)}`);
+    }
   }
 
-  await persist(context);
-  return { services: context.manager.getConfigs(), warnings: finalized.warnings };
+  return { services: context.manager.getConfigs(), warnings };
 };
 
 const validateNextCollection = (services: ServiceConfig[]): void => {
   new DirectManagedProcessCollectionLifecycle(() => services).validate(services);
-};
-
-const persist = async (context: ManifestEditingContext): Promise<void> => {
-  await saveManifest(context.manifestPath, context.manager.getConfigs(), context.appConfig);
 };
