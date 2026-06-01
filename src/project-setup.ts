@@ -1,9 +1,9 @@
 import { finalizeSelection, type DiscoverySelection } from "./discovery";
 import { writeManifest } from "./init";
-import type { ServiceConfig } from "./types";
+import type { ProcessDefinition } from "./types";
 
 export interface ProjectSetupResult {
-  services: ServiceConfig[];
+  services: ProcessDefinition[];
   warnings: string[];
 }
 

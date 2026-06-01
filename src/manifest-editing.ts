@@ -54,7 +54,7 @@ export const replaceProcessDefinition = async (
   return applyManifestEdit(context, {
     nextConfigs,
     apply: async () => {
-      await context.manager.updateServiceConfig(index, config);
+      await context.manager.updateProcessDefinition(index, config);
     },
     cleanupRemovedClaimNames: previousName && previousName !== config.name ? [previousName] : [],
   });
