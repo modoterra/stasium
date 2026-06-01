@@ -93,6 +93,17 @@ export const decideUpdate = (input: UpdateDecisionInput): UpdateDecision => {
   }
 
   const channelReleases = input.releases.filter((entry) => entry.channel === input.channel);
+  for (const channelRelease of channelReleases) {
+    if (!parseVersion(channelRelease.version)) {
+      return {
+        type: "failure",
+        currentVersion: input.currentVersion,
+        channel: input.channel,
+        reason: `Invalid update version "${channelRelease.version}".`,
+      };
+    }
+  }
+
   let release = channelReleases[0];
 
   for (const candidate of channelReleases.slice(1)) {
@@ -102,14 +113,7 @@ export const decideUpdate = (input: UpdateDecisionInput): UpdateDecision => {
     }
 
     const versionComparison = compareVersions(candidate.version, release.version);
-    if (versionComparison === null) {
-      return {
-        type: "failure",
-        currentVersion: input.currentVersion,
-        channel: input.channel,
-        reason: `Invalid update version "${candidate.version}".`,
-      };
-    }
+    if (versionComparison === null) throw new Error("validated versions should be comparable");
 
     if (versionComparison > 0) release = candidate;
   }
@@ -124,14 +128,7 @@ export const decideUpdate = (input: UpdateDecisionInput): UpdateDecision => {
   }
 
   const versionComparison = compareVersions(release.version, input.currentVersion);
-  if (versionComparison === null) {
-    return {
-      type: "failure",
-      currentVersion: input.currentVersion,
-      channel: input.channel,
-      reason: `Invalid update version "${release.version}".`,
-    };
-  }
+  if (versionComparison === null) throw new Error("validated versions should be comparable");
 
   if (versionComparison <= 0) {
     return {

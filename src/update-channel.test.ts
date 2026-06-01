@@ -165,6 +165,40 @@ describe("Update Channel decision model", () => {
     });
   });
 
+  test("reports the invalid release version when unordered metadata starts invalid", () => {
+    const decision = decideUpdate({
+      currentVersion: "0.1.0",
+      channel: "stable",
+      platform: { os: "linux", arch: "x64" },
+      releases: [
+        {
+          version: "next",
+          channel: "stable",
+          artifacts: [],
+        },
+        {
+          version: "0.2.0",
+          channel: "stable",
+          artifacts: [
+            {
+              platform: { os: "linux", arch: "x64" },
+              name: "stasium-linux-x64",
+              url: "https://example.com/stasium-linux-x64",
+              sha256: "abc123",
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(decision).toEqual({
+      type: "failure",
+      currentVersion: "0.1.0",
+      channel: "stable",
+      reason: 'Invalid update version "next".',
+    });
+  });
+
   test("reports failure when the current version is invalid", () => {
     const decision = decideUpdate({
       currentVersion: "dev",
