@@ -1,19 +1,18 @@
-import { dirname, resolve } from "node:path";
+import { resolve } from "node:path";
 import { type KeyEvent, createCliRenderer } from "@opentui/core";
 import { createDockerComposeExternalRuntimeAdapter } from "./docker";
 import { ExternalRuntimeVisibilityManager, detectExternalRuntimes } from "./external-runtime";
 import { FocusManager } from "./focus";
+import { DiscoverySelection, detectServices, formatServiceSummary } from "./init";
 import {
-  DiscoverySelection,
-  detectServices,
-  finalizeSelection,
-  formatServiceSummary,
-  writeManifest,
-} from "./init";
-import { loadManifest, parseServiceBlock, renderServiceBlock, saveManifest } from "./manifest";
-import { normalizeProcessDefinition } from "./process-definition";
+  addProcessDefinition,
+  addSelectedDiscoveryCandidates,
+  removeSelectedProcessDefinition,
+  replaceProcessDefinition,
+} from "./manifest-editing";
+import { loadManifest, renderServiceBlock } from "./manifest";
 import { ProcessClaimStore } from "./process-claim";
-import { getTopologicalServiceOrder } from "./service-graph";
+import { createProjectManifest } from "./project-setup";
 import { ServiceManager } from "./service-manager";
 import { fileExists, getErrorMessage } from "./shared";
 import { createShutdownHandler } from "./shutdown";
@@ -238,14 +237,11 @@ const setupKeybindings = (
       controls.clearEditError();
       const toml = controls.getEditContent();
       try {
-        const config = parseServiceBlock(toml, dirname(manifestPath));
-        const index = manager.getSelectedIndex();
-        const previousName = manager.getSelectedConfig()?.name;
-        await manager.updateServiceConfig(index, config);
-        await saveManifest(manifestPath, manager.getConfigs(), appConfig);
-        if (previousName && previousName !== config.name) {
-          await processClaimStore.releaseDirectManagedProcessNames([previousName]);
-        }
+        await replaceProcessDefinition(
+          { manifestPath, appConfig, manager, processClaimStore },
+          manager.getSelectedIndex(),
+          toml,
+        );
       } catch (error) {
         controls.setEditError(getErrorMessage(error));
         return;
@@ -273,10 +269,10 @@ const setupKeybindings = (
       }
 
       try {
-        await manager.addService(
-          normalizeProcessDefinition({ name, command }, { baseDir: dirname(manifestPath) }),
+        await addProcessDefinition(
+          { manifestPath, appConfig, manager, processClaimStore },
+          { name, command },
         );
-        await saveManifest(manifestPath, manager.getConfigs(), appConfig);
         controls.hideAddOverlay();
         focusManager.setMode("normal");
       } catch (error) {
@@ -332,33 +328,18 @@ const setupKeybindings = (
         controls.clearDiscoveryError();
 
         try {
-          const finalized = finalizeSelection(selection, {
-            existingServices: manager.getConfigs(),
-            usedNames: manager.getConfigs().map((config) => config.name),
-          });
+          const previousCount = manager.getConfigs().length;
+          const result = await addSelectedDiscoveryCandidates(
+            { manifestPath, appConfig, manager, processClaimStore },
+            selection,
+          );
 
-          if (finalized.services.length === 0) {
+          if (result.services.length === previousCount) {
             controls.setDiscoveryError("Select at least one service to add.");
             return;
           }
 
-          const pendingByName = new Map(
-            finalized.services.map((service) => [service.name, service]),
-          );
-          const orderedNames = getTopologicalServiceOrder([
-            ...manager.getConfigs(),
-            ...finalized.services,
-          ]);
-
-          for (const serviceName of orderedNames) {
-            const service = pendingByName.get(serviceName);
-            if (!service) continue;
-            await manager.addService(service);
-          }
-
-          await saveManifest(manifestPath, manager.getConfigs(), appConfig);
-
-          for (const warning of finalized.warnings) {
+          for (const warning of result.warnings) {
             console.error(`Discovery warning: ${warning}`);
           }
 
@@ -377,10 +358,12 @@ const setupKeybindings = (
 
   const handleDeleteConfirm = async (key: KeyEvent) => {
     if (key.name === "y") {
-      const removedName = manager.getSelectedConfig()?.name;
-      await manager.removeSelected();
-      await saveManifest(manifestPath, manager.getConfigs(), appConfig);
-      if (removedName) await processClaimStore.releaseDirectManagedProcessNames([removedName]);
+      await removeSelectedProcessDefinition({
+        manifestPath,
+        appConfig,
+        manager,
+        processClaimStore,
+      });
       deleteConfirming = false;
       controls.hideDeleteConfirm();
       return;
@@ -881,8 +864,7 @@ export const run = async () => {
 
     startInitFlow(renderer, teardownRef, runtime, async (selection, warnings) => {
       try {
-        const finalized = finalizeSelection(selection);
-        await writeManifest(manifestPath, finalized.services);
+        const finalized = await createProjectManifest(manifestPath, selection);
         renderer.destroy();
 
         console.log(`Created ${manifestPath}`);
@@ -962,10 +944,9 @@ export const run = async () => {
   const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
   startInitFlow(renderer, teardownRef, runtime, async (selection) => {
     try {
-      const finalized = finalizeSelection(selection);
       teardownRef.current?.();
       teardownRef.current = null;
-      await writeManifest(manifestPath, finalized.services);
+      await createProjectManifest(manifestPath, selection);
       await startApp(renderer, teardownRef, shutdownRef, runtime);
     } catch (error) {
       console.error(getErrorMessage(error));
