@@ -78,9 +78,37 @@ export const detectExternalRuntimes = async (
   return runtimes;
 };
 
+class ExternalRuntimeSnapshotCollection {
+  private processes: ExternalManagedProcess[] = [];
+
+  replace(snapshots: ExternalManagedProcess[][]): void {
+    this.processes = snapshots.flat();
+  }
+
+  all(): ExternalManagedProcess[] {
+    return [...this.processes];
+  }
+
+  at(index: number): ExternalManagedProcess | null {
+    return this.processes[index] ?? null;
+  }
+
+  find(name: string): ExternalManagedProcess | null {
+    return this.processes.find((candidate) => matchesProcessName(candidate, name)) ?? null;
+  }
+
+  findIndexByKey(key: string): number {
+    return this.processes.findIndex((process) => processKey(process) === key);
+  }
+
+  maxIndex(): number {
+    return Math.max(0, this.processes.length - 1);
+  }
+}
+
 export class ExternalRuntimeVisibilityManager {
   private readonly runtimes: ExternalRuntime[];
-  private processes: ExternalManagedProcess[] = [];
+  private readonly snapshots = new ExternalRuntimeSnapshotCollection();
   private selectedIndex = 0;
   private readonly logs: Map<string, LogBuffer> = new Map();
   private readonly updateCallbacks: Set<ExternalRuntimeUpdateCallback> = new Set();
@@ -100,7 +128,7 @@ export class ExternalRuntimeVisibilityManager {
   }
 
   getProcesses(): ExternalManagedProcess[] {
-    return [...this.processes];
+    return this.snapshots.all();
   }
 
   getServices(): ExternalManagedProcess[] {
@@ -112,7 +140,7 @@ export class ExternalRuntimeVisibilityManager {
   }
 
   setSelectedIndex(index: number): void {
-    const max = Math.max(0, this.processes.length - 1);
+    const max = this.snapshots.maxIndex();
     const next = Math.min(Math.max(index, 0), max);
     if (next === this.selectedIndex) return;
     this.selectedIndex = next;
@@ -133,7 +161,7 @@ export class ExternalRuntimeVisibilityManager {
   }
 
   getSelectedProcess(): ExternalManagedProcess | null {
-    return this.processes[this.selectedIndex] ?? null;
+    return this.snapshots.at(this.selectedIndex);
   }
 
   getSelectedService(): ExternalManagedProcess | null {
@@ -167,7 +195,7 @@ export class ExternalRuntimeVisibilityManager {
     try {
       const previousProcess = this.getSelectedProcess();
       const previousKey = previousProcess ? processKey(previousProcess) : null;
-      const snapshots = await Promise.all(
+      const runtimeSnapshots = await Promise.all(
         this.runtimes.map(async (runtime) => {
           try {
             return await runtime.snapshot();
@@ -176,16 +204,14 @@ export class ExternalRuntimeVisibilityManager {
           }
         }),
       );
-      this.processes = snapshots.flat();
+      this.snapshots.replace(runtimeSnapshots);
 
       if (previousKey !== null) {
-        const restoredIndex = this.processes.findIndex(
-          (process) => processKey(process) === previousKey,
-        );
+        const restoredIndex = this.snapshots.findIndexByKey(previousKey);
         this.selectedIndex = restoredIndex >= 0 ? restoredIndex : 0;
       }
 
-      const maxIndex = Math.max(0, this.processes.length - 1);
+      const maxIndex = this.snapshots.maxIndex();
       if (this.selectedIndex > maxIndex) {
         this.selectedIndex = maxIndex;
       }
@@ -333,7 +359,7 @@ export class ExternalRuntimeVisibilityManager {
   }
 
   private findProcess(name: string): ExternalManagedProcess | null {
-    return this.processes.find((candidate) => matchesProcessName(candidate, name)) ?? null;
+    return this.snapshots.find(name);
   }
 
   private runtimeFor(runtimeId: string): ExternalRuntime {
