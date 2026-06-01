@@ -7,7 +7,7 @@ import { ProcessClaimStore } from "./process-claim";
 import { type ServiceEvent, ServiceProcess } from "./service";
 import { ServiceGraphError } from "./service-graph";
 import { StartupDependencyPlanError } from "./startup-dependency-plan";
-import type { ServiceConfig, ServicePid, ServiceState } from "./types";
+import type { ProcessDefinition, ServicePid, ServiceState } from "./types";
 
 export interface ServiceView {
   name: string;
@@ -17,7 +17,7 @@ export interface ServiceView {
   manualRestartCount: number;
   restartInMs: number | null;
   log: LogBuffer;
-  config: ServiceConfig;
+  config: ProcessDefinition;
 }
 
 export type UpdateCallback = () => void;
@@ -52,7 +52,7 @@ export class ServiceManager {
   private readonly processCallbacks: Set<UpdateCallback> = new Set();
   private selectedIndex = 0;
 
-  constructor(configs: ServiceConfig[], options: ServiceManagerOptions = {}) {
+  constructor(configs: ProcessDefinition[], options: ServiceManagerOptions = {}) {
     this.launchAdapter = options.launchAdapter ?? new LaunchInstructionExecutionAdapter();
     this.processClaimStore = options.processClaimStore ?? null;
     this.externalRuntimeManager = options.externalRuntimeManager ?? null;
@@ -116,12 +116,12 @@ export class ServiceManager {
     return this.views[this.selectedIndex] ?? null;
   }
 
-  getSelectedConfig(): ServiceConfig | null {
+  getSelectedConfig(): ProcessDefinition | null {
     const view = this.views[this.selectedIndex];
     return view ? view.config : null;
   }
 
-  getConfigs(): ServiceConfig[] {
+  getConfigs(): ProcessDefinition[] {
     return this.views.map((v) => v.config);
   }
 
@@ -222,7 +222,7 @@ export class ServiceManager {
     }
   }
 
-  async addService(config: ServiceConfig): Promise<void> {
+  async addService(config: ProcessDefinition): Promise<void> {
     if (this.hasServiceName(config.name)) {
       throw new ServiceManagerError(`Service name already exists: ${config.name}`);
     }
@@ -277,7 +277,7 @@ export class ServiceManager {
     return true;
   }
 
-  async updateServiceConfig(index: number, config: ServiceConfig): Promise<void> {
+  async updateServiceConfig(index: number, config: ProcessDefinition): Promise<void> {
     const oldService = this.services[index];
     if (!oldService) return;
 
@@ -392,7 +392,7 @@ export class ServiceManager {
     }
   }
 
-  private assertValidConfigGraph(configs: ServiceConfig[]): void {
+  private assertValidConfigGraph(configs: ProcessDefinition[]): void {
     this.runGraphOperation(() => {
       this.collectionLifecycle.validate(configs);
     });
@@ -462,9 +462,9 @@ export class ServiceManager {
     await this.startService(service);
   }
 
-  private async getUnavailableDependencies(config: ServiceConfig): Promise<string[]> {
+  private async getUnavailableDependencies(config: ProcessDefinition): Promise<string[]> {
     const blocked: string[] = [];
-    for (const dependency of config.depends_on) {
+    for (const dependency of config.startupDependencies) {
       const view = this.views.find((entry) => entry.name === dependency);
       if (view) {
         if (view.state === "FAILED" || view.state === "BLOCKED") blocked.push(dependency);

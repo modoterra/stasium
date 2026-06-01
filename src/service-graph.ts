@@ -1,4 +1,4 @@
-import type { ServiceConfig } from "./types";
+import type { ProcessDefinition } from "./types";
 
 export type StartupDependencyValidationMode = "direct-only" | "cross-runtime";
 
@@ -19,10 +19,10 @@ export class ServiceGraphError extends Error {
   }
 }
 
-const dependenciesOf = (service: ServiceConfig): string[] => service.depends_on;
+const dependenciesOf = (service: ProcessDefinition): string[] => service.startupDependencies;
 
 const acceptsStartupDependency = (
-  servicesByName: Map<string, ServiceConfig>,
+  servicesByName: Map<string, ProcessDefinition>,
   dependency: string,
   options: ServiceGraphOptions,
 ): boolean => {
@@ -35,8 +35,8 @@ const acceptsStartupDependency = (
   return new Set(validation.externalManagedProcessNames ?? []).has(dependency);
 };
 
-const buildServiceMap = (services: ServiceConfig[]): Map<string, ServiceConfig> => {
-  const byName = new Map<string, ServiceConfig>();
+const buildServiceMap = (services: ProcessDefinition[]): Map<string, ProcessDefinition> => {
+  const byName = new Map<string, ProcessDefinition>();
 
   for (const service of services) {
     if (byName.has(service.name)) {
@@ -48,7 +48,7 @@ const buildServiceMap = (services: ServiceConfig[]): Map<string, ServiceConfig> 
   return byName;
 };
 
-const findCycle = (servicesByName: Map<string, ServiceConfig>): string[] | null => {
+const findCycle = (servicesByName: Map<string, ProcessDefinition>): string[] | null => {
   const visiting = new Set<string>();
   const visited = new Set<string>();
   const stack: string[] = [];
@@ -89,7 +89,7 @@ const findCycle = (servicesByName: Map<string, ServiceConfig>): string[] | null 
 };
 
 export const validateServiceGraph = (
-  services: ServiceConfig[],
+  services: ProcessDefinition[],
   options: ServiceGraphOptions = {},
 ): void => {
   const servicesByName = buildServiceMap(services);
@@ -114,7 +114,7 @@ export const validateServiceGraph = (
 };
 
 export const getTopologicalServiceOrder = (
-  services: ServiceConfig[],
+  services: ProcessDefinition[],
   options: ServiceGraphOptions = {},
 ): string[] => {
   validateServiceGraph(services, options);
@@ -165,7 +165,7 @@ export const getTopologicalServiceOrder = (
 };
 
 export const getTopologicalServiceLayers = (
-  services: ServiceConfig[],
+  services: ProcessDefinition[],
   options: ServiceGraphOptions = {},
 ): string[][] => {
   validateServiceGraph(services, options);
@@ -220,7 +220,7 @@ export const getTopologicalServiceLayers = (
 };
 
 export const getDependencyClosure = (
-  services: ServiceConfig[],
+  services: ProcessDefinition[],
   target: string,
   options: ServiceGraphOptions = {},
 ): Set<string> => {
@@ -250,7 +250,7 @@ export const getDependencyClosure = (
 };
 
 export const getDependentsClosure = (
-  services: ServiceConfig[],
+  services: ProcessDefinition[],
   target: string,
   options: ServiceGraphOptions = {},
 ): Set<string> => {

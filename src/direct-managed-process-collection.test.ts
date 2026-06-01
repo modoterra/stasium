@@ -4,12 +4,12 @@ import {
   type DirectManagedProcessCollection,
 } from "./direct-managed-process-collection";
 import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
-import type { ServiceConfig } from "./types";
+import type { ProcessDefinition } from "./types";
 
-const processDefinition = (input: ProcessDefinitionInput): ServiceConfig =>
+const processDefinition = (input: ProcessDefinitionInput): ProcessDefinition =>
   normalizeProcessDefinition(input);
 
-const processDefinitions = (): ServiceConfig[] => [
+const processDefinitions = (): ProcessDefinition[] => [
   processDefinition({ name: "db", launchInstruction: ["bun", "run", "db"] }),
   processDefinition({
     name: "api",

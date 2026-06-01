@@ -1,4 +1,4 @@
-import type { CommandSpec, RestartPolicy, ServiceConfig } from "../types";
+import type { CommandSpec, ProcessDefinition, RestartPolicy } from "../types";
 
 export interface ValuePathProbe {
   file: string;
@@ -78,7 +78,7 @@ export interface DetectedCandidate {
   label: string;
   priority: number;
   defaultSelected: boolean;
-  service: ServiceConfig;
+  service: ProcessDefinition;
   dependsOnIds: string[];
 }
 
@@ -93,6 +93,6 @@ export interface SelectionItem {
 }
 
 export interface FinalizeSelectionResult {
-  services: ServiceConfig[];
+  services: ProcessDefinition[];
   warnings: string[];
 }

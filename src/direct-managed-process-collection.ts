@@ -1,13 +1,13 @@
 import { getDependencyClosure, getDependentsClosure } from "./service-graph";
 import { planStartupDependencies } from "./startup-dependency-plan";
-import type { ServiceConfig } from "./types";
+import type { ProcessDefinition } from "./types";
 
 export interface DirectManagedProcessCollectionLifecycleOptions {
   allowExternalDependencies?: boolean;
 }
 
 export interface DirectManagedProcessCollection {
-  validate(configs: ServiceConfig[]): void;
+  validate(configs: ProcessDefinition[]): void;
   startupLayers(): string[][];
   startupOrder(): string[];
   shutdownOrder(): string[];
@@ -16,18 +16,18 @@ export interface DirectManagedProcessCollection {
 }
 
 export class DirectManagedProcessCollectionLifecycle implements DirectManagedProcessCollection {
-  private readonly getConfigs: () => ServiceConfig[];
+  private readonly getConfigs: () => ProcessDefinition[];
   private readonly options: DirectManagedProcessCollectionLifecycleOptions;
 
   constructor(
-    getConfigs: () => ServiceConfig[],
+    getConfigs: () => ProcessDefinition[],
     options: DirectManagedProcessCollectionLifecycleOptions = {},
   ) {
     this.getConfigs = getConfigs;
     this.options = options;
   }
 
-  validate(configs: ServiceConfig[]): void {
+  validate(configs: ProcessDefinition[]): void {
     planStartupDependencies(configs, this.options);
   }
 

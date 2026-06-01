@@ -291,7 +291,7 @@ export const renderServiceBlock = (service: ServiceConfig): string => {
   return renderServiceToml(service);
 };
 
-export const parseServiceBlock = (toml: string, baseDir?: string): ServiceConfig => {
+export const parseServiceBlock = (toml: string, baseDir?: string): ProcessDefinition => {
   let parsed: RawManifest;
   try {
     parsed = Bun.TOML.parse(toml) as RawManifest;

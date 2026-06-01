@@ -7,7 +7,7 @@ import type { ProcessClaimStore } from "./process-claim";
 import { getTopologicalServiceOrder } from "./service-graph";
 import type { ServiceManager } from "./service-manager";
 import { getErrorMessage } from "./shared";
-import type { AppConfig, ServiceConfig } from "./types";
+import type { AppConfig, ProcessDefinition } from "./types";
 
 export interface ManifestEditingContext {
   manifestPath: string;
@@ -17,12 +17,12 @@ export interface ManifestEditingContext {
 }
 
 export interface ManifestEditingResult {
-  services: ServiceConfig[];
+  services: ProcessDefinition[];
   warnings: string[];
 }
 
 interface ManifestEditTransaction {
-  nextConfigs: ServiceConfig[];
+  nextConfigs: ProcessDefinition[];
   apply: () => Promise<void>;
   cleanupRemovedClaimNames?: string[];
 }
@@ -132,6 +132,6 @@ const applyManifestEdit = async (
   return { services: context.manager.getConfigs(), warnings };
 };
 
-const validateNextCollection = (services: ServiceConfig[]): void => {
+const validateNextCollection = (services: ProcessDefinition[]): void => {
   new DirectManagedProcessCollectionLifecycle(() => services).validate(services);
 };

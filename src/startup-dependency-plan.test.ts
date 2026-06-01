@@ -5,9 +5,9 @@ import {
   getBlockedProcessStates,
   planStartupDependencies,
 } from "./startup-dependency-plan";
-import type { ServiceConfig } from "./types";
+import type { ProcessDefinition } from "./types";
 
-const processDefinition = (input: ProcessDefinitionInput): ServiceConfig =>
+const processDefinition = (input: ProcessDefinitionInput): ProcessDefinition =>
   normalizeProcessDefinition(input);
 
 describe("Startup Dependency planning", () => {

@@ -4,11 +4,12 @@ import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
 import { ProcessClaimStore } from "./process-claim";
 import { ServiceManager, ServiceManagerError } from "./service-manager";
-import type { ExternalManagedProcess, LogEntry, ServiceConfig, ServicePid } from "./types";
+import type { ExternalManagedProcess, LogEntry, ProcessDefinition, ServicePid } from "./types";
 
-const service = (input: ProcessDefinitionInput): ServiceConfig => normalizeProcessDefinition(input);
+const service = (input: ProcessDefinitionInput): ProcessDefinition =>
+  normalizeProcessDefinition(input);
 
-const makeConfig = (name: string): ServiceConfig =>
+const makeConfig = (name: string): ProcessDefinition =>
   service({
     name,
     launchInstruction: ["bun", "--version"],

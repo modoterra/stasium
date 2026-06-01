@@ -8,11 +8,12 @@ import {
   getTopologicalServiceOrder,
   validateServiceGraph,
 } from "./service-graph";
-import type { ServiceConfig } from "./types";
+import type { ProcessDefinition } from "./types";
 
-const service = (input: ProcessDefinitionInput): ServiceConfig => normalizeProcessDefinition(input);
+const service = (input: ProcessDefinitionInput): ProcessDefinition =>
+  normalizeProcessDefinition(input);
 
-const baseServices: ServiceConfig[] = [
+const baseServices: ProcessDefinition[] = [
   service({
     name: "api",
     launchInstruction: ["bun", "run", "dev"],
@@ -66,7 +67,7 @@ describe("service graph", () => {
   });
 
   test("rejects unknown dependencies", () => {
-    const services: ServiceConfig[] = [
+    const services: ProcessDefinition[] = [
       service({
         name: "api",
         launchInstruction: ["bun", "run", "dev"],
@@ -78,7 +79,7 @@ describe("service graph", () => {
   });
 
   test("validates direct-only Startup Dependencies explicitly", () => {
-    const services: ServiceConfig[] = [
+    const services: ProcessDefinition[] = [
       service({
         name: "api",
         launchInstruction: ["bun", "run", "dev"],
@@ -94,7 +95,7 @@ describe("service graph", () => {
   });
 
   test("accepts named cross-runtime Startup Dependencies", () => {
-    const services: ServiceConfig[] = [
+    const services: ProcessDefinition[] = [
       service({
         name: "api",
         launchInstruction: ["bun", "run", "dev"],
@@ -113,7 +114,7 @@ describe("service graph", () => {
   });
 
   test("rejects unresolved cross-runtime Startup Dependencies", () => {
-    const services: ServiceConfig[] = [
+    const services: ProcessDefinition[] = [
       service({
         name: "api",
         launchInstruction: ["bun", "run", "dev"],
@@ -132,7 +133,7 @@ describe("service graph", () => {
   });
 
   test("rejects dependency cycles", () => {
-    const services: ServiceConfig[] = [
+    const services: ProcessDefinition[] = [
       service({
         name: "api",
         launchInstruction: ["bun", "run", "dev"],
