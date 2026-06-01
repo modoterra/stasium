@@ -746,6 +746,7 @@ const startApp = async (
   const shutdown = createShutdownHandler({
     cwd: process.cwd(),
     manager,
+    externalRuntimeManager,
     getServicePids: () => manager.getServicePids(),
     logger: (message) => console.error(message),
   });

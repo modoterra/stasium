@@ -1,4 +1,5 @@
 import { LogBuffer } from "./log-buffer";
+import { getErrorMessage } from "./shared";
 import type { ExternalManagedProcess, LogEntry } from "./types";
 
 export type ExternalRuntimeUpdateCallback = () => void;
@@ -52,6 +53,8 @@ export class ExternalRuntimeVisibilityManager {
   private refreshing = false;
   private activeOutputStream: ExternalRuntimeOutputStream | null = null;
   private activeOutputKey: string | null = null;
+  private readonly sessionStartedProcesses: Map<string, { runtimeId: string; name: string }> =
+    new Map();
 
   constructor(runtimes: ExternalRuntime[]) {
     this.runtimes = runtimes;
@@ -188,7 +191,26 @@ export class ExternalRuntimeVisibilityManager {
     if (!updated) return false;
 
     runtime = this.runtimeFor(updated.runtimeId);
-    return runtime.isAvailable(updated);
+    const available = runtime.isAvailable(updated);
+    if (available) {
+      this.sessionStartedProcesses.set(processKey(updated), {
+        runtimeId: updated.runtimeId,
+        name: updated.name,
+      });
+    }
+    return available;
+  }
+
+  async stopSessionStartedProcesses(logger?: (message: string) => void): Promise<void> {
+    const records = [...this.sessionStartedProcesses.entries()].reverse();
+    for (const [key, record] of records) {
+      try {
+        await this.runtimeFor(record.runtimeId).stop(record.name);
+        this.sessionStartedProcesses.delete(key);
+      } catch (error) {
+        logger?.(`External Runtime cleanup warning for "${key}": ${getErrorMessage(error)}`);
+      }
+    }
   }
 
   async stop(name: string): Promise<void> {
