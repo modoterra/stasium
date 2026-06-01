@@ -40,6 +40,12 @@ class TestClaims extends ProcessClaimStore {
   }
 }
 
+class FailingReleaseClaims extends TestClaims {
+  override async releaseDirectManagedProcessNames(): Promise<void> {
+    throw new Error("release failed");
+  }
+}
+
 describe("Manifest Editing", () => {
   test("adds a Process Definition through one persisted runtime apply flow", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
@@ -157,6 +163,31 @@ describe("Manifest Editing", () => {
 
       expect(manager.getConfigs().map((config) => config.name)).toEqual(["api"]);
       expect(claims.releasedNames).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("reports Process Claim release failures as warnings after a successful edit", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
+    const manifestPath = join(dir, "stasium.toml");
+    try {
+      const original = normalizeProcessDefinition({ name: "api", command: "bun run dev" });
+      await saveManifest(manifestPath, [original]);
+      const claims = new FailingReleaseClaims(dir);
+      const manager = new ServiceManager([original], { processClaimStore: claims });
+      const replacement = normalizeProcessDefinition({ name: "web", command: "bun run dev" });
+
+      const result = await replaceProcessDefinition(
+        { manifestPath, manager, processClaimStore: claims },
+        0,
+        renderServiceBlock(replacement),
+      );
+
+      const manifest = await loadManifest(manifestPath);
+      expect(manager.getConfigs().map((config) => config.name)).toEqual(["web"]);
+      expect(manifest.services.map((config) => config.name)).toEqual(["web"]);
+      expect(result.warnings).toEqual(["Failed to release Process Claims: release failed"]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

@@ -6,6 +6,7 @@ import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./proce
 import type { ProcessClaimStore } from "./process-claim";
 import { getTopologicalServiceOrder } from "./service-graph";
 import type { ServiceManager } from "./service-manager";
+import { getErrorMessage } from "./shared";
 import type { AppConfig, ServiceConfig } from "./types";
 
 export interface ManifestEditingContext {
@@ -116,11 +117,19 @@ const applyManifestEdit = async (
   await saveManifest(context.manifestPath, transaction.nextConfigs, context.appConfig);
   await transaction.apply();
 
+  const warnings: string[] = [];
+
   if (transaction.releaseClaimNames && transaction.releaseClaimNames.length > 0) {
-    await context.processClaimStore.releaseDirectManagedProcessNames(transaction.releaseClaimNames);
+    try {
+      await context.processClaimStore.releaseDirectManagedProcessNames(
+        transaction.releaseClaimNames,
+      );
+    } catch (error) {
+      warnings.push(`Failed to release Process Claims: ${getErrorMessage(error)}`);
+    }
   }
 
-  return { services: context.manager.getConfigs(), warnings: [] };
+  return { services: context.manager.getConfigs(), warnings };
 };
 
 const validateNextCollection = (services: ServiceConfig[]): void => {
