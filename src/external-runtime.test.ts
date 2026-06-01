@@ -114,6 +114,42 @@ describe("ExternalRuntimeVisibilityManager", () => {
     expect(actions).toEqual(["podman:restart:cache"]);
   });
 
+  test("streams selected External Process Output through the active log buffer", async () => {
+    let emit = (_entry: LogEntry): void => {};
+    const testRuntime = runtime("docker", [process("docker", "db")]);
+    testRuntime.streamOutput = (name, onOutput) => {
+      emit = onOutput;
+      return { stop: () => {} };
+    };
+    const manager = new ExternalRuntimeVisibilityManager([testRuntime]);
+
+    await manager.refresh();
+    manager.streamSelectedLogs();
+    emit({ timestamp: "2026-06-01T12:00:00Z", line: "ready", stream: "stdout" });
+
+    expect(manager.getActiveLogBuffer()?.all()).toEqual([
+      { timestamp: "2026-06-01T12:00:00Z", line: "ready", stream: "stdout" },
+    ]);
+    expect(manager.getSelectedLogBuffer()?.all()).toEqual([
+      { timestamp: "2026-06-01T12:00:00Z", line: "ready", stream: "stdout" },
+    ]);
+  });
+
+  test("stops previous External Process Output stream when selection changes", async () => {
+    const actions: string[] = [];
+    const testRuntime = runtime("docker", [process("docker", "db"), process("docker", "cache")]);
+    testRuntime.streamOutput = (name) => {
+      actions.push(`stream:${name}`);
+      return { stop: () => actions.push(`stop:${name}`) };
+    };
+    const manager = new ExternalRuntimeVisibilityManager([testRuntime]);
+
+    await manager.refresh();
+    manager.selectIndex(1);
+
+    expect(actions).toEqual(["stream:db", "stop:db", "stream:cache"]);
+  });
+
   test("tracks and stops External Managed Processes auto-started for Startup Dependencies", async () => {
     const actions: string[] = [];
     let state: ExternalManagedProcess["state"] = "exited";
