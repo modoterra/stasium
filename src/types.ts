@@ -61,6 +61,17 @@ export interface DockerService {
   ports: string;
 }
 
+export type ExternalManagedProcessState = DockerServiceState;
+
+export interface ExternalManagedProcess {
+  runtimeId: string;
+  runtimeName: string;
+  name: string;
+  state: ExternalManagedProcessState;
+  status: string;
+  ports: string;
+}
+
 export interface Shortcut {
   key: string;
   label: string;

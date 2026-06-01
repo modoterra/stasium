@@ -1,6 +1,7 @@
 import { dirname, resolve } from "node:path";
 import { type KeyEvent, createCliRenderer } from "@opentui/core";
-import { DockerManager, detectComposeFile } from "./docker";
+import { createDockerComposeExternalRuntimeAdapter } from "./docker";
+import { ExternalRuntimeVisibilityManager, detectExternalRuntimes } from "./external-runtime";
 import { FocusManager } from "./focus";
 import {
   DiscoverySelection,
@@ -30,7 +31,7 @@ type ShutdownController = {
 type AppRuntime = {
   disposed: boolean;
   closing: boolean;
-  dockerManager: DockerManager | null;
+  externalRuntimeManager: ExternalRuntimeVisibilityManager | null;
   exitCode: number | null;
 };
 
@@ -38,7 +39,7 @@ type MainUiSession = {
   teardown: () => void;
   controls: UiControls;
   focusManager: FocusManager;
-  dockerManager: DockerManager | null;
+  externalRuntimeManager: ExternalRuntimeVisibilityManager | null;
 };
 
 type MainUiSnapshot = {
@@ -105,7 +106,7 @@ const setupKeybindings = (
   renderer: Awaited<ReturnType<typeof createCliRenderer>>,
   manager: ServiceManager,
   focusManager: FocusManager,
-  dockerManager: DockerManager | null,
+  externalRuntimeManager: ExternalRuntimeVisibilityManager | null,
   controls: UiControls,
   manifestPath: string,
   appConfig: AppConfig | undefined,
@@ -215,23 +216,23 @@ const setupKeybindings = (
     }
   };
 
-  const handleNormalDocker = async (key: KeyEvent) => {
-    if (!dockerManager) return;
+  const handleNormalExternalRuntime = async (key: KeyEvent) => {
+    if (!externalRuntimeManager) return;
     switch (key.name) {
       case "s":
-        await dockerManager.startSelected();
+        await externalRuntimeManager.startSelected();
         break;
       case "x":
-        await dockerManager.stopSelected();
+        await externalRuntimeManager.stopSelected();
         break;
       case "r":
-        await dockerManager.restartSelected();
+        await externalRuntimeManager.restartSelected();
         break;
       case "up":
-        dockerManager.moveSelection(-1);
+        externalRuntimeManager.moveSelection(-1);
         break;
       case "down":
-        dockerManager.moveSelection(1);
+        externalRuntimeManager.moveSelection(1);
         break;
       default:
         break;
@@ -460,20 +461,20 @@ const setupKeybindings = (
     }
   };
 
-  const triggerDockerShortcut = async (shortcut: Shortcut): Promise<void> => {
-    if (!dockerManager) return;
+  const triggerExternalRuntimeShortcut = async (shortcut: Shortcut): Promise<void> => {
+    if (!externalRuntimeManager) return;
     switch (shortcut.label) {
       case "start":
-        await dockerManager.startSelected();
+        await externalRuntimeManager.startSelected();
         return;
       case "stop":
-        await dockerManager.stopSelected();
+        await externalRuntimeManager.stopSelected();
         return;
       case "restart":
-        await dockerManager.restartSelected();
+        await externalRuntimeManager.restartSelected();
         return;
       case "select":
-        dockerManager.moveSelection(1);
+        externalRuntimeManager.moveSelection(1);
         return;
       default:
         return;
@@ -524,7 +525,7 @@ const setupKeybindings = (
     }
 
     if (panel === "docker") {
-      await triggerDockerShortcut(shortcut);
+      await triggerExternalRuntimeShortcut(shortcut);
     }
   };
 
@@ -540,7 +541,7 @@ const setupKeybindings = (
         focusManager.togglePanel("manifest");
         return true;
       case "2":
-        if (dockerManager) {
+        if (externalRuntimeManager) {
           focusManager.togglePanel("docker");
           return true;
         }
@@ -566,12 +567,12 @@ const setupKeybindings = (
       console.error(`Shutdown warning: ${getErrorMessage(error)}`);
     }
 
-    const activeDockerManager = runtime.dockerManager ?? dockerManager;
-    if (activeDockerManager) {
+    const activeExternalRuntimeManager = runtime.externalRuntimeManager ?? externalRuntimeManager;
+    if (activeExternalRuntimeManager) {
       try {
-        await activeDockerManager.destroy();
+        await activeExternalRuntimeManager.destroy();
       } catch (error) {
-        console.error(`Docker cleanup warning: ${getErrorMessage(error)}`);
+        console.error(`External Runtime cleanup warning: ${getErrorMessage(error)}`);
       }
     }
 
@@ -662,7 +663,7 @@ const setupKeybindings = (
       }
 
       if (panel === "docker") {
-        await handleNormalDocker(key);
+        await handleNormalExternalRuntime(key);
         return;
       }
     } catch (error) {
@@ -671,7 +672,7 @@ const setupKeybindings = (
   });
 };
 
-const isDockerEnabled = (appConfig: AppConfig | undefined): boolean =>
+const isExternalRuntimeVisibilityEnabled = (appConfig: AppConfig | undefined): boolean =>
   appConfig?.docker?.enabled ?? true;
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -710,27 +711,27 @@ const mountMainUiSession = (
   manager: ServiceManager,
   manifest: Awaited<ReturnType<typeof loadManifest>>,
   appConfig: AppConfig | undefined,
-  dockerManager: DockerManager | null,
+  externalRuntimeManager: ExternalRuntimeVisibilityManager | null,
   snapshot?: MainUiSnapshot,
 ): MainUiSession => {
-  const focusManager = new FocusManager(dockerManager !== null);
+  const focusManager = new FocusManager(externalRuntimeManager !== null);
   const { teardown, controls } = buildUi({
     renderer,
     manifest,
     manager,
     focusManager,
-    dockerManager,
+    dockerManager: externalRuntimeManager,
   });
 
   teardownRef.current = teardown;
-  runtime.dockerManager = dockerManager;
+  runtime.externalRuntimeManager = externalRuntimeManager;
 
   renderer.keyInput.removeAllListeners("keypress");
   setupKeybindings(
     renderer,
     manager,
     focusManager,
-    dockerManager,
+    externalRuntimeManager,
     controls,
     manifestPath,
     appConfig,
@@ -745,15 +746,15 @@ const mountMainUiSession = (
     controls.renderAll();
   }
 
-  if (dockerManager && !runtime.closing && !runtime.disposed) {
-    dockerManager.startPolling();
+  if (externalRuntimeManager && !runtime.closing && !runtime.disposed) {
+    externalRuntimeManager.startPolling();
   }
 
   return {
     teardown,
     controls,
     focusManager,
-    dockerManager,
+    externalRuntimeManager,
   };
 };
 
@@ -807,10 +808,14 @@ const startApp = async (
       });
       if (runtime.closing || runtime.disposed) return;
 
-      if (runtime.closing || runtime.disposed || !isDockerEnabled(appConfig)) return;
+      if (runtime.closing || runtime.disposed || !isExternalRuntimeVisibilityEnabled(appConfig)) {
+        return;
+      }
 
-      const composePath = await detectComposeFile(process.cwd());
-      if (runtime.closing || runtime.disposed || !composePath) return;
+      const externalRuntimes = await detectExternalRuntimes(process.cwd(), [
+        createDockerComposeExternalRuntimeAdapter(),
+      ]);
+      if (runtime.closing || runtime.disposed || externalRuntimes.length === 0) return;
 
       while (
         !runtime.closing &&
@@ -821,9 +826,9 @@ const startApp = async (
       }
       if (runtime.closing || runtime.disposed) return;
 
-      const dockerManager = new DockerManager(composePath);
+      const externalRuntimeManager = new ExternalRuntimeVisibilityManager(externalRuntimes);
       if (runtime.closing || runtime.disposed) {
-        await dockerManager.destroy();
+        await externalRuntimeManager.destroy();
         return;
       }
       const snapshot = sessionRef.current ? captureMainUiSnapshot(sessionRef.current) : undefined;
@@ -838,7 +843,7 @@ const startApp = async (
         manager,
         manifest,
         appConfig,
-        dockerManager,
+        externalRuntimeManager,
         snapshot,
       );
     } catch (error) {
@@ -916,7 +921,7 @@ export const run = async () => {
   const runtime: AppRuntime = {
     disposed: false,
     closing: false,
-    dockerManager: null,
+    externalRuntimeManager: null,
     exitCode: null,
   };
 
@@ -989,13 +994,13 @@ export const run = async () => {
       runtime.closing = true;
 
       const finishCleanup = async () => {
-        if (runtime.dockerManager) {
+        if (runtime.externalRuntimeManager) {
           try {
-            await runtime.dockerManager.destroy();
+            await runtime.externalRuntimeManager.destroy();
           } catch (error) {
-            console.error(`Docker cleanup warning: ${getErrorMessage(error)}`);
+            console.error(`External Runtime cleanup warning: ${getErrorMessage(error)}`);
           } finally {
-            runtime.dockerManager = null;
+            runtime.externalRuntimeManager = null;
           }
         }
 
