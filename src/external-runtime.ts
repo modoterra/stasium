@@ -29,6 +29,41 @@ export interface ExternalRuntimeAdapter {
   detect: (cwd: string) => Promise<ExternalRuntime | null>;
 }
 
+export interface ExternalRuntimeSessionRecord {
+  runtimeId: string;
+  name: string;
+  key: string;
+}
+
+export interface ExternalRuntimeSessionTracker {
+  trackStarted(process: ExternalManagedProcess): void;
+  startedProcesses(): ExternalRuntimeSessionRecord[];
+  forget(key: string): void;
+}
+
+export class ExternalRuntimeSession implements ExternalRuntimeSessionTracker {
+  private readonly sessionStartedProcesses: Map<string, { runtimeId: string; name: string }> =
+    new Map();
+
+  trackStarted(process: ExternalManagedProcess): void {
+    this.sessionStartedProcesses.set(processKey(process), {
+      runtimeId: process.runtimeId,
+      name: process.name,
+    });
+  }
+
+  startedProcesses(): ExternalRuntimeSessionRecord[] {
+    return [...this.sessionStartedProcesses.entries()].map(([key, record]) => ({
+      key,
+      ...record,
+    }));
+  }
+
+  forget(key: string): void {
+    this.sessionStartedProcesses.delete(key);
+  }
+}
+
 const LOG_CAPACITY = 2000;
 
 export const detectExternalRuntimes = async (
@@ -53,8 +88,7 @@ export class ExternalRuntimeVisibilityManager {
   private refreshing = false;
   private activeOutputStream: ExternalRuntimeOutputStream | null = null;
   private activeOutputKey: string | null = null;
-  private readonly sessionStartedProcesses: Map<string, { runtimeId: string; name: string }> =
-    new Map();
+  private readonly session: ExternalRuntimeSessionTracker = new ExternalRuntimeSession();
 
   constructor(runtimes: ExternalRuntime[]) {
     this.runtimes = runtimes;
@@ -193,22 +227,19 @@ export class ExternalRuntimeVisibilityManager {
     runtime = this.runtimeFor(updated.runtimeId);
     const available = runtime.isAvailable(updated);
     if (available) {
-      this.sessionStartedProcesses.set(processKey(updated), {
-        runtimeId: updated.runtimeId,
-        name: updated.name,
-      });
+      this.session.trackStarted(updated);
     }
     return available;
   }
 
   async stopSessionStartedProcesses(logger?: (message: string) => void): Promise<void> {
-    const records = [...this.sessionStartedProcesses.entries()].reverse();
-    for (const [key, record] of records) {
+    const records = this.session.startedProcesses().reverse();
+    for (const record of records) {
       try {
         await this.runtimeFor(record.runtimeId).stop(record.name);
-        this.sessionStartedProcesses.delete(key);
+        this.session.forget(record.key);
       } catch (error) {
-        logger?.(`External Runtime cleanup warning for "${key}": ${getErrorMessage(error)}`);
+        logger?.(`External Runtime cleanup warning for "${record.key}": ${getErrorMessage(error)}`);
       }
     }
   }
