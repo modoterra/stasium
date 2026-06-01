@@ -136,6 +136,28 @@ describe("ServiceManager", () => {
     await manager.stopAll();
   });
 
+  test("keeps Process State and Process Output visible through the public runtime interface", async () => {
+    const manager = new ServiceManager([
+      service({
+        name: "api",
+        launchInstruction: ["bun", "-e", 'console.log("api-ready"); setInterval(() => {}, 1000);'],
+      }),
+    ]);
+
+    await manager.startAll();
+
+    const visible = await waitFor(() => {
+      const view = manager.getViews()[0];
+      return (
+        view?.state === "RUNNING" &&
+        view.log.all().some((entry) => entry.stream === "stdout" && entry.line === "api-ready")
+      );
+    });
+    expect(visible).toBe(true);
+
+    await manager.stopAll();
+  });
+
   test("starts unavailable External Managed Process dependencies without claiming ownership", async () => {
     const actions: string[] = [];
     const claims: string[] = [];
