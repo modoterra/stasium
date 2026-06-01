@@ -1,8 +1,10 @@
+import { DirectManagedProcessCollectionLifecycle } from "./direct-managed-process-collection";
+import { DirectManagedProcessLifecycle } from "./direct-managed-process-lifecycle";
 import { LogBuffer } from "./log-buffer";
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { type ServiceEvent, ServiceProcess } from "./service";
-import { ServiceGraphError, getDependencyClosure, getDependentsClosure } from "./service-graph";
-import { StartupDependencyPlanError, planStartupDependencies } from "./startup-dependency-plan";
+import { ServiceGraphError } from "./service-graph";
+import { StartupDependencyPlanError } from "./startup-dependency-plan";
 import type { ServiceConfig, ServicePid, ServiceState } from "./types";
 
 export interface ServiceView {
@@ -10,6 +12,7 @@ export interface ServiceView {
   state: ServiceState;
   lastExitCode: number | null;
   restartCount: number;
+  manualRestartCount: number;
   restartInMs: number | null;
   log: LogBuffer;
   config: ServiceConfig;
@@ -24,10 +27,6 @@ export interface ServiceManagerOptions {
 const LOG_CAPACITY = 2000;
 const WAIT_INTERVAL_MS = 50;
 const SERVICE_STOP_TIMEOUT_MS = 2000;
-const RESTART_BASE_DELAY_MS = 250;
-const RESTART_MAX_DELAY_MS = 5000;
-const RUN_STABLE_RESET_MS = 5000;
-
 export class ServiceManagerError extends Error {
   constructor(message: string) {
     super(message);
@@ -39,11 +38,8 @@ export class ServiceManager {
   private services: ServiceProcess[];
   private views: ServiceView[];
   private unsubscribers: Array<() => void>;
-  private readonly autoRestartSuppressed: Set<ServiceProcess> = new Set();
-  private readonly restartTimers: Map<ServiceProcess, ReturnType<typeof setTimeout>> = new Map();
-  private readonly restartAttempts: Map<ServiceProcess, number> = new Map();
-  private readonly restartDeadlines: Map<ServiceProcess, number> = new Map();
-  private readonly runStableTimers: Map<ServiceProcess, ReturnType<typeof setTimeout>> = new Map();
+  private readonly lifecycles: Map<ServiceProcess, DirectManagedProcessLifecycle> = new Map();
+  private readonly collectionLifecycle: DirectManagedProcessCollectionLifecycle;
   private readonly launchAdapter: LaunchInstructionExecutionAdapter;
   private restartTicker: ReturnType<typeof setInterval> | null = null;
   private readonly updateCallbacks: Set<UpdateCallback> = new Set();
@@ -51,18 +47,23 @@ export class ServiceManager {
   private selectedIndex = 0;
 
   constructor(configs: ServiceConfig[], options: ServiceManagerOptions = {}) {
-    this.assertValidConfigGraph(configs);
     this.launchAdapter = options.launchAdapter ?? new LaunchInstructionExecutionAdapter();
+    this.collectionLifecycle = new DirectManagedProcessCollectionLifecycle(() => this.getConfigs());
+    this.assertValidConfigGraph(configs);
     this.services = configs.map((config) => new ServiceProcess(config, this.launchAdapter));
     this.views = this.services.map((service) => ({
       name: service.config.name,
       state: "STOPPED",
       lastExitCode: null,
       restartCount: 0,
+      manualRestartCount: 0,
       restartInMs: null,
       log: new LogBuffer(LOG_CAPACITY),
       config: service.config,
     }));
+    for (const service of this.services) {
+      this.lifecycles.set(service, this.createLifecycle(service));
+    }
     this.unsubscribers = this.services.map((service) => this.subscribeService(service));
   }
 
@@ -129,7 +130,7 @@ export class ServiceManager {
         layer.map(async (name) => {
           const service = this.getServiceByName(name);
           if (!service) return;
-          await this.startService(service);
+          await this.startServiceUnlessBlocked(service);
         }),
       );
     }
@@ -143,7 +144,8 @@ export class ServiceManager {
 
   async forceStopAll(): Promise<void> {
     await this.forEachResolvedService(this.getShutdownOrderNames(), async (service) => {
-      this.suppressAutoRestart(service);
+      const view = this.getViewByService(service);
+      if (view) this.getLifecycle(service)?.suppressRestart(view);
       await service.forceStop("SIGKILL");
     });
   }
@@ -155,7 +157,7 @@ export class ServiceManager {
     await this.forEachResolvedService(
       this.getStartOrderForService(service.config.name),
       async (next) => {
-        await this.startService(next);
+        await this.startServiceUnlessBlocked(next);
       },
     );
   }
@@ -179,7 +181,8 @@ export class ServiceManager {
     await this.forEachResolvedService(
       this.getStopOrderForService(service.config.name),
       async (next) => {
-        this.suppressAutoRestart(next);
+        const view = this.getViewByService(next);
+        if (view) this.getLifecycle(next)?.suppressRestart(view);
         await next.forceStop("SIGKILL");
       },
     );
@@ -194,12 +197,12 @@ export class ServiceManager {
     await this.forEachResolvedService(
       this.getStartOrderForService(service.config.name),
       async (next) => {
-        await this.startService(next);
+        await this.startServiceUnlessBlocked(next);
       },
     );
 
     if (view) {
-      view.restartCount += 1;
+      view.manualRestartCount += 1;
       this.notify();
     }
   }
@@ -218,14 +221,16 @@ export class ServiceManager {
       state: "STOPPED",
       lastExitCode: null,
       restartCount: 0,
+      manualRestartCount: 0,
       restartInMs: null,
       log: new LogBuffer(LOG_CAPACITY),
       config,
     });
+    this.lifecycles.set(process, this.createLifecycle(process));
     this.unsubscribers.push(this.subscribeService(process));
 
     await this.forEachResolvedService(this.getStartOrderForService(config.name), async (next) => {
-      await this.startService(next);
+      await this.startServiceUnlessBlocked(next);
     });
 
     this.notify();
@@ -242,6 +247,7 @@ export class ServiceManager {
 
     this.unsubscribers[index]?.();
     this.unsubscribers.splice(index, 1);
+    this.lifecycles.delete(service);
     this.services.splice(index, 1);
     this.views.splice(index, 1);
 
@@ -285,9 +291,11 @@ export class ServiceManager {
     }
 
     this.unsubscribers[index] = this.subscribeService(newProcess);
+    this.lifecycles.delete(oldService);
+    this.lifecycles.set(newProcess, this.createLifecycle(newProcess));
 
     await this.forEachResolvedService(this.getStartOrderForService(config.name), async (next) => {
-      await this.startService(next);
+      await this.startServiceUnlessBlocked(next);
     });
 
     this.notify();
@@ -311,16 +319,17 @@ export class ServiceManager {
       view.state = event.state;
       if (event.state === "RUNNING") {
         view.restartInMs = null;
-        this.scheduleStableRunReset(service);
+        this.getLifecycle(service)?.noteRunning();
       }
       this.notifyProcessChange();
     } else if (event.type === "log") {
       view.log.add(event.entry);
     } else if (event.type === "exit") {
-      this.clearRunStableTimer(service);
+      const lifecycle = this.getLifecycle(service);
+      lifecycle?.noteExit(view, event.code);
+      if (lifecycle?.hasPendingRestart()) this.startRestartTicker();
       view.lastExitCode = event.code;
       this.notifyProcessChange();
-      this.maybeScheduleRestart(service, view, event.code);
     }
 
     this.notify();
@@ -370,36 +379,28 @@ export class ServiceManager {
 
   private assertValidConfigGraph(configs: ServiceConfig[]): void {
     this.runGraphOperation(() => {
-      planStartupDependencies(configs);
+      this.collectionLifecycle.validate(configs);
     });
   }
 
   private getTopologicalOrderNames(): string[] {
-    return this.runGraphOperation(() => planStartupDependencies(this.getConfigs()).startupOrder);
+    return this.runGraphOperation(() => this.collectionLifecycle.startupOrder());
   }
 
   private getShutdownOrderNames(): string[] {
-    return this.runGraphOperation(() => planStartupDependencies(this.getConfigs()).shutdownOrder);
+    return this.runGraphOperation(() => this.collectionLifecycle.shutdownOrder());
   }
 
   private getTopologicalLayers(): string[][] {
-    return this.runGraphOperation(() => planStartupDependencies(this.getConfigs()).startupLayers);
+    return this.runGraphOperation(() => this.collectionLifecycle.startupLayers());
   }
 
   private getStartOrderForService(name: string): string[] {
-    return this.runGraphOperation(() => {
-      const closure = getDependencyClosure(this.getConfigs(), name);
-      return this.getTopologicalOrderNames().filter((serviceName) => closure.has(serviceName));
-    });
+    return this.runGraphOperation(() => this.collectionLifecycle.startOrderFor(name));
   }
 
   private getStopOrderForService(name: string): string[] {
-    return this.runGraphOperation(() => {
-      const closure = getDependentsClosure(this.getConfigs(), name);
-      return this.getTopologicalOrderNames()
-        .filter((serviceName) => closure.has(serviceName))
-        .reverse();
-    });
+    return this.runGraphOperation(() => this.collectionLifecycle.stopOrderFor(name));
   }
 
   private getServiceByName(name: string): ServiceProcess | null {
@@ -418,126 +419,48 @@ export class ServiceManager {
     service: ServiceProcess,
     options: { resetAttempts: boolean } = { resetAttempts: true },
   ): Promise<void> {
-    this.clearAutoRestartSuppression(service);
-    this.clearRestartTimer(service);
-    this.clearRestartDeadline(service);
-    this.clearRunStableTimer(service);
-
     const view = this.getViewByService(service);
     if (view) {
       view.restartInMs = null;
     }
 
-    if (options.resetAttempts) {
-      this.restartAttempts.set(service, 0);
+    const lifecycle = this.getLifecycle(service);
+    if (lifecycle && view) {
+      if (options.resetAttempts) {
+        lifecycle.prepareManualStart(view);
+      } else {
+        lifecycle.prepareAutomaticRestart(view);
+      }
     }
     await service.start();
+  }
+
+  private async startServiceUnlessBlocked(service: ServiceProcess): Promise<void> {
+    const blockedBy = this.getUnavailableDependencies(service.config);
+    if (blockedBy.length > 0) {
+      service.block(
+        `Startup blocked by failed Startup Dependency ${blockedBy.map((name) => `"${name}"`).join(", ")}.`,
+      );
+      return;
+    }
+
+    await this.startService(service);
+  }
+
+  private getUnavailableDependencies(config: ServiceConfig): string[] {
+    return config.depends_on.filter((dependency) => {
+      const view = this.views.find((entry) => entry.name === dependency);
+      return view?.state === "FAILED" || view?.state === "BLOCKED";
+    });
   }
 
   private hasServiceName(name: string, exceptIndex: number | null = null): boolean {
     return this.views.some((view, index) => index !== exceptIndex && view.name === name);
   }
 
-  private suppressAutoRestart(service: ServiceProcess): void {
-    this.autoRestartSuppressed.add(service);
-    this.clearRestartTimer(service);
-    this.clearRestartDeadline(service);
-  }
-
-  private clearAutoRestartSuppression(service: ServiceProcess): void {
-    this.autoRestartSuppressed.delete(service);
-  }
-
-  private clearRestartTimer(service: ServiceProcess): void {
-    const timer = this.restartTimers.get(service);
-    if (timer) {
-      clearTimeout(timer);
-      this.restartTimers.delete(service);
-    }
-  }
-
-  private clearRestartDeadline(service: ServiceProcess): void {
-    this.restartDeadlines.delete(service);
-
-    const view = this.getViewByService(service);
-    if (view) {
-      view.restartInMs = null;
-    }
-
-    if (this.restartDeadlines.size === 0) {
-      this.stopRestartTicker();
-    }
-  }
-
-  private scheduleStableRunReset(service: ServiceProcess): void {
-    this.clearRunStableTimer(service);
-
-    const timer = setTimeout(() => {
-      this.runStableTimers.delete(service);
-      if (!this.services.includes(service) || !service.isRunning()) return;
-      this.restartAttempts.set(service, 0);
-    }, RUN_STABLE_RESET_MS);
-
-    this.runStableTimers.set(service, timer);
-  }
-
-  private clearRunStableTimer(service: ServiceProcess): void {
-    const timer = this.runStableTimers.get(service);
-    if (!timer) return;
-    clearTimeout(timer);
-    this.runStableTimers.delete(service);
-  }
-
   private clearServiceRuntimeState(service: ServiceProcess): void {
-    this.clearAutoRestartSuppression(service);
-    this.clearRestartTimer(service);
-    this.clearRestartDeadline(service);
-    this.clearRunStableTimer(service);
-    this.restartAttempts.delete(service);
-  }
-
-  private maybeScheduleRestart(
-    service: ServiceProcess,
-    view: ServiceView,
-    exitCode: number | null,
-  ): void {
-    if (!this.services.includes(service)) return;
-
-    if (this.autoRestartSuppressed.has(service)) {
-      this.autoRestartSuppressed.delete(service);
-      this.restartAttempts.set(service, 0);
-      return;
-    }
-
-    const policy = view.config.restart_policy;
-    if (policy === "never") return;
-    if (policy === "on-failure" && exitCode === 0) return;
-
-    const attempt = (this.restartAttempts.get(service) ?? 0) + 1;
-    this.restartAttempts.set(service, attempt);
-
-    const delay = Math.min(RESTART_BASE_DELAY_MS * 2 ** (attempt - 1), RESTART_MAX_DELAY_MS);
-    this.clearRestartTimer(service);
-    this.restartDeadlines.set(service, Date.now() + delay);
-    view.restartInMs = delay;
-    this.startRestartTicker();
-
-    const timer = setTimeout(() => {
-      this.restartTimers.delete(service);
-      if (!this.services.includes(service)) return;
-
-      const index = this.services.indexOf(service);
-      const currentView = index >= 0 ? this.views[index] : null;
-      if (currentView) {
-        currentView.restartCount += 1;
-      }
-
-      void this.startService(service, { resetAttempts: false }).then(() => {
-        this.notify();
-      });
-    }, delay);
-
-    this.restartTimers.set(service, timer);
+    const view = this.getViewByService(service);
+    if (view) this.getLifecycle(service)?.clearRuntimeState(view);
   }
 
   private startRestartTicker(): void {
@@ -547,29 +470,13 @@ export class ServiceManager {
       let changed = false;
       const now = Date.now();
 
-      for (const [service, deadline] of this.restartDeadlines.entries()) {
-        const remaining = Math.max(0, deadline - now);
-
-        if (!this.services.includes(service)) {
-          this.restartDeadlines.delete(service);
-          changed = true;
-          continue;
-        }
-
+      for (const [service, lifecycle] of this.lifecycles.entries()) {
         const view = this.getViewByService(service);
-        if (!view) {
-          this.restartDeadlines.delete(service);
-          changed = true;
-          continue;
-        }
-
-        if (view.restartInMs !== remaining) {
-          view.restartInMs = remaining;
-          changed = true;
-        }
+        if (!view) continue;
+        changed = lifecycle.tick(view, now) || changed;
       }
 
-      if (this.restartDeadlines.size === 0) {
+      if (![...this.lifecycles.values()].some((lifecycle) => lifecycle.hasPendingRestart())) {
         this.stopRestartTicker();
       }
 
@@ -586,8 +493,8 @@ export class ServiceManager {
   }
 
   private async stopService(service: ServiceProcess): Promise<void> {
-    this.suppressAutoRestart(service);
-    this.clearRunStableTimer(service);
+    const view = this.getViewByService(service);
+    if (view) this.getLifecycle(service)?.suppressRestart(view);
     if (!service.isRunning()) return;
 
     await service.stop();
@@ -609,5 +516,20 @@ export class ServiceManager {
       await new Promise((resolve) => setTimeout(resolve, WAIT_INTERVAL_MS));
     }
     return !service.isRunning();
+  }
+
+  private createLifecycle(service: ServiceProcess): DirectManagedProcessLifecycle {
+    return new DirectManagedProcessLifecycle({
+      onChange: () => this.notify(),
+      onRestart: async (resetAttempts) => {
+        await this.startService(service, { resetAttempts });
+      },
+      isActive: () => this.services.includes(service),
+      isRunning: () => service.isRunning(),
+    });
+  }
+
+  private getLifecycle(service: ServiceProcess): DirectManagedProcessLifecycle | null {
+    return this.lifecycles.get(service) ?? null;
   }
 }

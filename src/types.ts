@@ -1,6 +1,6 @@
 export type RestartPolicy = "never" | "on-failure" | "always";
 
-export type ServiceState = "STOPPED" | "STARTING" | "RUNNING" | "FAILED" | "STOPPING";
+export type ServiceState = "STOPPED" | "STARTING" | "RUNNING" | "FAILED" | "STOPPING" | "BLOCKED";
 
 export type CommandSpec = string | string[];
 

@@ -99,6 +99,15 @@ export class ServiceProcess {
     }
   }
 
+  block(reason: string): void {
+    if (this.isRunning()) return;
+    this.emit({
+      type: "log",
+      entry: { timestamp: new Date().toISOString(), line: reason, stream: "stderr" },
+    });
+    this.setState("BLOCKED");
+  }
+
   async stop(signal: NodeJS.Signals = "SIGINT"): Promise<void> {
     if (!this.launchHandle) {
       this.setState("STOPPED");
