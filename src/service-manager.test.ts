@@ -220,6 +220,35 @@ describe("ServiceManager", () => {
     expect(manager.getServicePids()).toHaveLength(0);
   });
 
+  test("recomputes blocked state when an External Managed Process dependency becomes available", async () => {
+    const actions: string[] = [];
+    let dbState: ExternalManagedProcess["state"] = "exited";
+    const externalRuntimeManager = new ExternalRuntimeVisibilityManager([
+      externalRuntime(() => [externalProcess("db", dbState)], actions),
+    ]);
+    const manager = new ServiceManager(
+      [
+        service({
+          name: "api",
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["docker-compose:db"],
+        }),
+      ],
+      { externalRuntimeManager, launchAdapter: launchLongRunningPid(22) },
+    );
+
+    await manager.startAll();
+    expect(manager.getSelectedView()?.state).toBe("BLOCKED");
+    expect(manager.getServicePids()).toHaveLength(0);
+
+    dbState = "running";
+    await manager.startAll();
+
+    expect(actions).toEqual(["start:db"]);
+    expect(manager.getSelectedView()?.state).toBe("RUNNING");
+    expect(manager.getServicePids().map((entry) => entry.name)).toEqual(["api"]);
+  });
+
   test("stops selected dependency and its dependents", async () => {
     const manager = new ServiceManager([
       service({
