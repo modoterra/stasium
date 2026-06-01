@@ -20,6 +20,10 @@ export interface StartupDependencyPlan {
   shutdownOrder: string[];
 }
 
+export interface StartupDependencyPlanOptions {
+  allowExternalDependencies?: boolean;
+}
+
 export class StartupDependencyPlanError extends Error {
   constructor(message: string) {
     super(message);
@@ -46,16 +50,17 @@ const cloneProcessDefinitions = (processDefinitions: ServiceConfig[]): ServiceCo
 
 export const planStartupDependencies = (
   processDefinitions: ServiceConfig[],
+  options: StartupDependencyPlanOptions = {},
 ): StartupDependencyPlan => {
   const cloned = cloneProcessDefinitions(processDefinitions);
 
   try {
-    validateServiceGraph(cloned);
-    const startupOrder = getTopologicalServiceOrder(cloned);
+    validateServiceGraph(cloned, options);
+    const startupOrder = getTopologicalServiceOrder(cloned, options);
     return {
       processDefinitions: cloned,
       startupOrder,
-      startupLayers: getTopologicalServiceLayers(cloned),
+      startupLayers: getTopologicalServiceLayers(cloned, options),
       shutdownOrder: [...startupOrder].reverse(),
     };
   } catch (error) {

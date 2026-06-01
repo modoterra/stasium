@@ -11,7 +11,8 @@ export interface ExternalRuntime {
   id: string;
   name: string;
   snapshot: () => Promise<ExternalManagedProcess[]>;
-  start: (name: string) => Promise<void>;
+  isAvailable: (process: ExternalManagedProcess) => boolean;
+  start?: (name: string) => Promise<void>;
   stop: (name: string) => Promise<void>;
   restart: (name: string) => Promise<void>;
   streamOutput: (
@@ -165,8 +166,29 @@ export class ExternalRuntimeVisibilityManager {
   }
 
   async start(name: string): Promise<void> {
-    await this.withProcess(name, (runtime, process) => runtime.start(process.name));
+    await this.withProcess(name, async (runtime, process) => {
+      await runtime.start?.(process.name);
+    });
     await this.refresh();
+  }
+
+  async ensureProcessAvailable(name: string): Promise<boolean> {
+    await this.refresh();
+    const process = this.findProcess(name);
+    if (!process) return false;
+
+    let runtime = this.runtimeFor(process.runtimeId);
+    if (runtime.isAvailable(process)) return true;
+    if (!runtime.start) return false;
+
+    await runtime.start(process.name);
+    await this.refresh();
+
+    const updated = this.findProcess(name);
+    if (!updated) return false;
+
+    runtime = this.runtimeFor(updated.runtimeId);
+    return runtime.isAvailable(updated);
   }
 
   async stop(name: string): Promise<void> {
@@ -252,9 +274,13 @@ export class ExternalRuntimeVisibilityManager {
     key: string,
     action: (runtime: ExternalRuntime, process: ExternalManagedProcess) => Promise<void>,
   ): Promise<void> {
-    const process = this.processes.find((candidate) => processKey(candidate) === key);
+    const process = this.findProcess(key);
     if (!process) return;
     await action(this.runtimeFor(process.runtimeId), process);
+  }
+
+  private findProcess(name: string): ExternalManagedProcess | null {
+    return this.processes.find((candidate) => matchesProcessName(candidate, name)) ?? null;
   }
 
   private runtimeFor(runtimeId: string): ExternalRuntime {
@@ -272,3 +298,6 @@ export class ExternalRuntimeVisibilityManager {
 
 const processKey = (process: ExternalManagedProcess): string =>
   `${process.runtimeId}:${process.name}`;
+
+const matchesProcessName = (process: ExternalManagedProcess, name: string): boolean =>
+  process.name === name || processKey(process) === name;

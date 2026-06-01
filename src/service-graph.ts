@@ -1,5 +1,9 @@
 import type { ServiceConfig } from "./types";
 
+export interface ServiceGraphOptions {
+  allowExternalDependencies?: boolean;
+}
+
 export class ServiceGraphError extends Error {
   constructor(message: string) {
     super(message);
@@ -62,12 +66,15 @@ const findCycle = (servicesByName: Map<string, ServiceConfig>): string[] | null 
   return null;
 };
 
-export const validateServiceGraph = (services: ServiceConfig[]): void => {
+export const validateServiceGraph = (
+  services: ServiceConfig[],
+  options: ServiceGraphOptions = {},
+): void => {
   const servicesByName = buildServiceMap(services);
 
   for (const service of services) {
     for (const dependency of dependenciesOf(service)) {
-      if (!servicesByName.has(dependency)) {
+      if (!servicesByName.has(dependency) && !options.allowExternalDependencies) {
         throw new ServiceGraphError(
           `Service "${service.name}" depends on unknown service "${dependency}"`,
         );
@@ -84,8 +91,11 @@ export const validateServiceGraph = (services: ServiceConfig[]): void => {
   }
 };
 
-export const getTopologicalServiceOrder = (services: ServiceConfig[]): string[] => {
-  validateServiceGraph(services);
+export const getTopologicalServiceOrder = (
+  services: ServiceConfig[],
+  options: ServiceGraphOptions = {},
+): string[] => {
+  validateServiceGraph(services, options);
 
   const indegree = new Map<string, number>();
   const dependents = new Map<string, string[]>();
@@ -97,6 +107,7 @@ export const getTopologicalServiceOrder = (services: ServiceConfig[]): string[] 
 
   for (const service of services) {
     for (const dependency of dependenciesOf(service)) {
+      if (!dependents.has(dependency)) continue;
       indegree.set(service.name, (indegree.get(service.name) ?? 0) + 1);
       const list = dependents.get(dependency);
       if (list) {
@@ -131,8 +142,11 @@ export const getTopologicalServiceOrder = (services: ServiceConfig[]): string[] 
   return ordered;
 };
 
-export const getTopologicalServiceLayers = (services: ServiceConfig[]): string[][] => {
-  validateServiceGraph(services);
+export const getTopologicalServiceLayers = (
+  services: ServiceConfig[],
+  options: ServiceGraphOptions = {},
+): string[][] => {
+  validateServiceGraph(services, options);
 
   const indegree = new Map<string, number>();
   const dependents = new Map<string, string[]>();
@@ -144,6 +158,7 @@ export const getTopologicalServiceLayers = (services: ServiceConfig[]): string[]
 
   for (const service of services) {
     for (const dependency of dependenciesOf(service)) {
+      if (!dependents.has(dependency)) continue;
       indegree.set(service.name, (indegree.get(service.name) ?? 0) + 1);
       const list = dependents.get(dependency);
       if (list) {
@@ -182,8 +197,12 @@ export const getTopologicalServiceLayers = (services: ServiceConfig[]): string[]
   return layers;
 };
 
-export const getDependencyClosure = (services: ServiceConfig[], target: string): Set<string> => {
-  validateServiceGraph(services);
+export const getDependencyClosure = (
+  services: ServiceConfig[],
+  target: string,
+  options: ServiceGraphOptions = {},
+): Set<string> => {
+  validateServiceGraph(services, options);
 
   const byName = buildServiceMap(services);
   if (!byName.has(target)) {
@@ -208,8 +227,12 @@ export const getDependencyClosure = (services: ServiceConfig[], target: string):
   return closure;
 };
 
-export const getDependentsClosure = (services: ServiceConfig[], target: string): Set<string> => {
-  validateServiceGraph(services);
+export const getDependentsClosure = (
+  services: ServiceConfig[],
+  target: string,
+  options: ServiceGraphOptions = {},
+): Set<string> => {
+  validateServiceGraph(services, options);
 
   const byName = buildServiceMap(services);
   if (!byName.has(target)) {

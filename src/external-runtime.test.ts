@@ -102,6 +102,7 @@ const runtime = (
   id,
   name: id,
   snapshot: async () => processes,
+  isAvailable: (process) => process.state === "running",
   start: async (name) => {
     actions.push(`${id}:start:${name}`);
   },

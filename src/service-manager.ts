@@ -1,5 +1,6 @@
 import { DirectManagedProcessCollectionLifecycle } from "./direct-managed-process-collection";
 import { DirectManagedProcessLifecycle } from "./direct-managed-process-lifecycle";
+import { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { LogBuffer } from "./log-buffer";
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { ProcessClaimStore } from "./process-claim";
@@ -24,6 +25,7 @@ export type UpdateCallback = () => void;
 export interface ServiceManagerOptions {
   launchAdapter?: LaunchInstructionExecutionAdapter;
   processClaimStore?: ProcessClaimStore | null;
+  externalRuntimeManager?: ExternalRuntimeVisibilityManager | null;
 }
 
 const LOG_CAPACITY = 2000;
@@ -44,6 +46,7 @@ export class ServiceManager {
   private readonly collectionLifecycle: DirectManagedProcessCollectionLifecycle;
   private readonly launchAdapter: LaunchInstructionExecutionAdapter;
   private readonly processClaimStore: ProcessClaimStore | null;
+  private readonly externalRuntimeManager: ExternalRuntimeVisibilityManager | null;
   private restartTicker: ReturnType<typeof setInterval> | null = null;
   private readonly updateCallbacks: Set<UpdateCallback> = new Set();
   private readonly processCallbacks: Set<UpdateCallback> = new Set();
@@ -52,7 +55,13 @@ export class ServiceManager {
   constructor(configs: ServiceConfig[], options: ServiceManagerOptions = {}) {
     this.launchAdapter = options.launchAdapter ?? new LaunchInstructionExecutionAdapter();
     this.processClaimStore = options.processClaimStore ?? null;
-    this.collectionLifecycle = new DirectManagedProcessCollectionLifecycle(() => this.getConfigs());
+    this.externalRuntimeManager = options.externalRuntimeManager ?? null;
+    this.collectionLifecycle = new DirectManagedProcessCollectionLifecycle(
+      () => this.getConfigs(),
+      {
+        allowExternalDependencies: this.externalRuntimeManager !== null,
+      },
+    );
     this.assertValidConfigGraph(configs);
     this.services = configs.map(
       (config) => new ServiceProcess(config, this.launchAdapter, this.processClaimStore),
@@ -442,7 +451,7 @@ export class ServiceManager {
   }
 
   private async startServiceUnlessBlocked(service: ServiceProcess): Promise<void> {
-    const blockedBy = this.getUnavailableDependencies(service.config);
+    const blockedBy = await this.getUnavailableDependencies(service.config);
     if (blockedBy.length > 0) {
       service.block(
         `Startup blocked by failed Startup Dependency ${blockedBy.map((name) => `"${name}"`).join(", ")}.`,
@@ -453,11 +462,19 @@ export class ServiceManager {
     await this.startService(service);
   }
 
-  private getUnavailableDependencies(config: ServiceConfig): string[] {
-    return config.depends_on.filter((dependency) => {
+  private async getUnavailableDependencies(config: ServiceConfig): Promise<string[]> {
+    const blocked: string[] = [];
+    for (const dependency of config.depends_on) {
       const view = this.views.find((entry) => entry.name === dependency);
-      return view?.state === "FAILED" || view?.state === "BLOCKED";
-    });
+      if (view) {
+        if (view.state === "FAILED" || view.state === "BLOCKED") blocked.push(dependency);
+        continue;
+      }
+
+      const available = await this.externalRuntimeManager?.ensureProcessAvailable(dependency);
+      if (!available) blocked.push(dependency);
+    }
+    return blocked;
   }
 
   private hasServiceName(name: string, exceptIndex: number | null = null): boolean {
