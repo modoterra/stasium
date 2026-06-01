@@ -14,8 +14,10 @@ import { ProcessClaimStore } from "./process-claim";
 import { createProjectManifest } from "./project-setup";
 import { ServiceManager } from "./service-manager";
 import { fileExists, getErrorMessage } from "./shared";
+import { currentUpdatePlatform, runStartupUpdateCheck } from "./startup-update";
 import type { AppConfig, Manifest, Shortcut } from "./types";
 import { type UiControls, buildInitUi, buildUi } from "./ui";
+import { STASIUM_VERSION } from "./version";
 import { startWorkspace, type ShutdownController } from "./workspace-startup";
 
 const MANIFEST_PATH = "stasium.toml";
@@ -803,6 +805,15 @@ export const run = async () => {
     externalRuntimeManager: null,
     exitCode: null,
   };
+
+  const updateResult = await runStartupUpdateCheck({
+    currentVersion: STASIUM_VERSION,
+    executablePath: process.argv[0] ?? process.execPath,
+    platform: currentUpdatePlatform(),
+  });
+  for (const message of updateResult.messages) {
+    console.error(message);
+  }
 
   if (args[0] === "init") {
     const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
