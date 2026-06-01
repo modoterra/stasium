@@ -30,11 +30,11 @@ describe("ServiceManager launch execution", () => {
       [
         normalizeProcessDefinition({
           name: "api",
-          command: ["bun", "run", "dev"],
+          launchInstruction: ["bun", "run", "dev"],
         }),
         normalizeProcessDefinition({
           name: "worker",
-          command: ["bun", "run", "worker"],
+          launchInstruction: ["bun", "run", "worker"],
         }),
       ],
       { launchAdapter },

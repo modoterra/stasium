@@ -24,6 +24,8 @@ export interface ServiceConfig {
 
 export interface ProcessDefinition extends ServiceConfig {
   launchInstruction: LaunchInstruction;
+  workingDir: string;
+  environment: Record<string, string>;
   startupDependencies: StartupDependency[];
   restartRule: RestartRule;
 }

@@ -59,7 +59,7 @@ describe("startWorkspace", () => {
       await saveManifest(manifestPath, [
         normalizeProcessDefinition({
           name: "api",
-          command: ["bun", "-e", "setInterval(() => {}, 1000)"],
+          launchInstruction: ["bun", "-e", "setInterval(() => {}, 1000)"],
         }),
       ]);
 

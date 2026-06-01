@@ -11,7 +11,7 @@ const service = (input: ProcessDefinitionInput): ServiceConfig => normalizeProce
 const makeConfig = (name: string): ServiceConfig =>
   service({
     name,
-    command: ["bun", "--version"],
+    launchInstruction: ["bun", "--version"],
   });
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -104,12 +104,12 @@ describe("ServiceManager", () => {
     const manager = new ServiceManager([
       service({
         name: "db",
-        command: ["bun", "-e", "setTimeout(() => process.exit(0), 400)"],
+        launchInstruction: ["bun", "-e", "setTimeout(() => process.exit(0), 400)"],
       }),
       service({
         name: "api",
-        command: ["bun", "-e", "setTimeout(() => process.exit(0), 400)"],
-        depends_on: ["db"],
+        launchInstruction: ["bun", "-e", "setTimeout(() => process.exit(0), 400)"],
+        startupDependencies: ["db"],
       }),
     ]);
 
@@ -143,8 +143,8 @@ describe("ServiceManager", () => {
       [
         service({
           name: "api",
-          command: ["bun", "run", "dev"],
-          depends_on: ["db"],
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["db"],
         }),
       ],
       {
@@ -171,8 +171,8 @@ describe("ServiceManager", () => {
       [
         service({
           name: "api",
-          command: ["bun", "run", "dev"],
-          depends_on: ["db"],
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["db"],
         }),
       ],
       { externalRuntimeManager, launchAdapter: launchLongRunningPid(21) },
@@ -189,12 +189,12 @@ describe("ServiceManager", () => {
     const manager = new ServiceManager([
       service({
         name: "db",
-        command: ["bun", "-e", "setInterval(() => {}, 1000)"],
+        launchInstruction: ["bun", "-e", "setInterval(() => {}, 1000)"],
       }),
       service({
         name: "api",
-        command: ["bun", "-e", "setInterval(() => {}, 1000)"],
-        depends_on: ["db"],
+        launchInstruction: ["bun", "-e", "setInterval(() => {}, 1000)"],
+        startupDependencies: ["db"],
       }),
     ]);
 
@@ -219,7 +219,7 @@ describe("ServiceManager", () => {
     const manager = new ServiceManager([
       service({
         name: "stubborn",
-        command: ["bun", "-e", stubbornScript],
+        launchInstruction: ["bun", "-e", stubbornScript],
       }),
     ]);
 
@@ -244,7 +244,7 @@ describe("ServiceManager", () => {
     const manager = new ServiceManager([
       service({
         name: "tree",
-        command: ["bun", "-e", parentScript],
+        launchInstruction: ["bun", "-e", parentScript],
       }),
     ]);
 
@@ -291,8 +291,8 @@ describe("ServiceManager", () => {
     const manager = new ServiceManager([
       service({
         name: "failing",
-        command: ["bun", "-e", "process.exit(1)"],
-        restart_policy: "on-failure",
+        launchInstruction: ["bun", "-e", "process.exit(1)"],
+        restartRule: "on-failure",
       }),
     ]);
 
@@ -343,12 +343,12 @@ describe("ServiceManager", () => {
       [
         service({
           name: "db",
-          command: ["missing"],
+          launchInstruction: ["missing"],
         }),
         service({
           name: "api",
-          command: ["bun", "run", "dev"],
-          depends_on: ["db"],
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["db"],
         }),
       ],
       { launchAdapter },
@@ -367,7 +367,7 @@ describe("ServiceManager", () => {
     const manager = new ServiceManager([
       service({
         name: "api",
-        command: ["bun", "-e", "setInterval(() => {}, 1000)"],
+        launchInstruction: ["bun", "-e", "setInterval(() => {}, 1000)"],
       }),
     ]);
 
@@ -391,22 +391,25 @@ describe("ServiceManager", () => {
       }
     }
 
-    const manager = new ServiceManager([service({ name: "api", command: ["bun", "run", "dev"] })], {
-      processClaimStore: new TestClaims(process.cwd()),
-      launchAdapter: new LaunchInstructionExecutionAdapter({
-        now: () => "now",
-        pathReader: async () => process.env.PATH ?? "",
-        processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
-        spawner: () => ({
-          pid: 10,
-          stdout: null,
-          stderr: null,
-          exited: new Promise(() => {}),
-          signalCode: null,
-          kill: () => {},
+    const manager = new ServiceManager(
+      [service({ name: "api", launchInstruction: ["bun", "run", "dev"] })],
+      {
+        processClaimStore: new TestClaims(process.cwd()),
+        launchAdapter: new LaunchInstructionExecutionAdapter({
+          now: () => "now",
+          pathReader: async () => process.env.PATH ?? "",
+          processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
+          spawner: () => ({
+            pid: 10,
+            stdout: null,
+            stderr: null,
+            exited: new Promise(() => {}),
+            signalCode: null,
+            kill: () => {},
+          }),
         }),
-      }),
-    });
+      },
+    );
     manager.onProcessChange(() => {
       if (manager.getSelectedView()?.state === "RUNNING") events.push("running");
     });
@@ -424,22 +427,25 @@ describe("ServiceManager", () => {
       }
     }
 
-    const manager = new ServiceManager([service({ name: "api", command: ["bun", "run", "dev"] })], {
-      processClaimStore: new FailingClaims(process.cwd()),
-      launchAdapter: new LaunchInstructionExecutionAdapter({
-        now: () => "now",
-        pathReader: async () => process.env.PATH ?? "",
-        processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
-        spawner: () => ({
-          pid: 11,
-          stdout: null,
-          stderr: null,
-          exited: new Promise(() => {}),
-          signalCode: null,
-          kill: (signal) => killed.push(signal),
+    const manager = new ServiceManager(
+      [service({ name: "api", launchInstruction: ["bun", "run", "dev"] })],
+      {
+        processClaimStore: new FailingClaims(process.cwd()),
+        launchAdapter: new LaunchInstructionExecutionAdapter({
+          now: () => "now",
+          pathReader: async () => process.env.PATH ?? "",
+          processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
+          spawner: () => ({
+            pid: 11,
+            stdout: null,
+            stderr: null,
+            exited: new Promise(() => {}),
+            signalCode: null,
+            kill: (signal) => killed.push(signal),
+          }),
         }),
-      }),
-    });
+      },
+    );
 
     await manager.startAll();
 
@@ -457,22 +463,25 @@ describe("ServiceManager", () => {
       }
     }
 
-    const manager = new ServiceManager([service({ name: "api", command: ["bun", "run", "dev"] })], {
-      processClaimStore: new TestClaims(process.cwd()),
-      launchAdapter: new LaunchInstructionExecutionAdapter({
-        now: () => "now",
-        pathReader: async () => process.env.PATH ?? "",
-        processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
-        spawner: () => ({
-          pid: 12,
-          stdout: null,
-          stderr: null,
-          exited: Promise.resolve(0),
-          signalCode: null,
-          kill: () => {},
+    const manager = new ServiceManager(
+      [service({ name: "api", launchInstruction: ["bun", "run", "dev"] })],
+      {
+        processClaimStore: new TestClaims(process.cwd()),
+        launchAdapter: new LaunchInstructionExecutionAdapter({
+          now: () => "now",
+          pathReader: async () => process.env.PATH ?? "",
+          processInfoReader: async (pid) => ({ pid, startedAt: "started", command: null }),
+          spawner: () => ({
+            pid: 12,
+            stdout: null,
+            stderr: null,
+            exited: Promise.resolve(0),
+            signalCode: null,
+            kill: () => {},
+          }),
         }),
-      }),
-    });
+      },
+    );
 
     await manager.startAll();
     await waitFor(() => released.length === 1);

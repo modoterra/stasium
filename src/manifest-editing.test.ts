@@ -60,7 +60,7 @@ describe("Manifest Editing", () => {
 
       await addProcessDefinition(
         { manifestPath, manager, processClaimStore: claims },
-        { name: "api", command: "bun run dev" },
+        { name: "api", launchInstruction: "bun run dev" },
       );
 
       const manifest = await loadManifest(manifestPath);
@@ -83,7 +83,7 @@ describe("Manifest Editing", () => {
       await expect(
         addProcessDefinition(
           { manifestPath, manager, processClaimStore: claims },
-          { name: "api", command: "bun run dev", depends_on: ["missing"] },
+          { name: "api", launchInstruction: "bun run dev", startupDependencies: ["missing"] },
         ),
       ).rejects.toThrow('depends on unknown service "missing"');
 
@@ -104,7 +104,7 @@ describe("Manifest Editing", () => {
       await expect(
         addProcessDefinition(
           { manifestPath: dir, manager, processClaimStore: claims },
-          { name: "api", command: "bun run dev" },
+          { name: "api", launchInstruction: "bun run dev" },
         ),
       ).rejects.toThrow();
 
@@ -118,7 +118,10 @@ describe("Manifest Editing", () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
     const manifestPath = join(dir, "stasium.toml");
     try {
-      const original = normalizeProcessDefinition({ name: "api", command: "bun run dev" });
+      const original = normalizeProcessDefinition({
+        name: "api",
+        launchInstruction: "bun run dev",
+      });
       await saveManifest(manifestPath, [original]);
       const claims = new TestClaims(dir);
       const manager = new ServiceManager([original], {
@@ -128,7 +131,10 @@ describe("Manifest Editing", () => {
       const view = manager.getSelectedView();
       if (view) view.restartInMs = 123;
 
-      const replacement = normalizeProcessDefinition({ name: "web", command: "bun run dev" });
+      const replacement = normalizeProcessDefinition({
+        name: "web",
+        launchInstruction: "bun run dev",
+      });
       await replaceProcessDefinition(
         { manifestPath, manager, processClaimStore: claims },
         0,
@@ -148,10 +154,16 @@ describe("Manifest Editing", () => {
   test("does not replace or clean up claims when the Manifest cannot be saved", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
     try {
-      const original = normalizeProcessDefinition({ name: "api", command: "bun run dev" });
+      const original = normalizeProcessDefinition({
+        name: "api",
+        launchInstruction: "bun run dev",
+      });
       const claims = new TestClaims(dir);
       const manager = new ServiceManager([original], { processClaimStore: claims });
-      const replacement = normalizeProcessDefinition({ name: "web", command: "bun run dev" });
+      const replacement = normalizeProcessDefinition({
+        name: "web",
+        launchInstruction: "bun run dev",
+      });
 
       await expect(
         replaceProcessDefinition(
@@ -172,11 +184,17 @@ describe("Manifest Editing", () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
     const manifestPath = join(dir, "stasium.toml");
     try {
-      const original = normalizeProcessDefinition({ name: "api", command: "bun run dev" });
+      const original = normalizeProcessDefinition({
+        name: "api",
+        launchInstruction: "bun run dev",
+      });
       await saveManifest(manifestPath, [original]);
       const claims = new FailingReleaseClaims(dir);
       const manager = new ServiceManager([original], { processClaimStore: claims });
-      const replacement = normalizeProcessDefinition({ name: "web", command: "bun run dev" });
+      const replacement = normalizeProcessDefinition({
+        name: "web",
+        launchInstruction: "bun run dev",
+      });
 
       const result = await replaceProcessDefinition(
         { manifestPath, manager, processClaimStore: claims },
@@ -199,7 +217,10 @@ describe("Manifest Editing", () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
     const manifestPath = join(dir, "stasium.toml");
     try {
-      const original = normalizeProcessDefinition({ name: "api", command: "bun run dev" });
+      const original = normalizeProcessDefinition({
+        name: "api",
+        launchInstruction: "bun run dev",
+      });
       await saveManifest(manifestPath, [original]);
       const claims = new TestClaims(dir);
       const manager = new ServiceManager([original], { processClaimStore: claims });

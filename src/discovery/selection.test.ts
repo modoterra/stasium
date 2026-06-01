@@ -16,7 +16,7 @@ const makeCandidate = (
   dependsOnIds,
   service: normalizeProcessDefinition({
     name,
-    command: ["bun", "run", "dev"],
+    launchInstruction: ["bun", "run", "dev"],
   }),
 });
 
@@ -101,8 +101,8 @@ describe("discovery selection", () => {
           ...makeCandidate("api", "api"),
           service: normalizeProcessDefinition({
             name: "api",
-            command: ["bun", "run", "dev"],
-            depends_on: ["missing"],
+            launchInstruction: ["bun", "run", "dev"],
+            startupDependencies: ["missing"],
           }),
         },
       ]),
@@ -116,8 +116,8 @@ describe("discovery selection", () => {
           ...makeCandidate("api", "api"),
           service: normalizeProcessDefinition({
             name: "api",
-            command: ["bun", "run", "dev"],
-            depends_on: ["db"],
+            launchInstruction: ["bun", "run", "dev"],
+            startupDependencies: ["db"],
           }),
         },
       ],
@@ -125,7 +125,7 @@ describe("discovery selection", () => {
         existingServices: [
           normalizeProcessDefinition({
             name: "db",
-            command: ["bun", "run", "db"],
+            launchInstruction: ["bun", "run", "db"],
           }),
         ],
         usedNames: ["db"],

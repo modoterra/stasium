@@ -163,11 +163,11 @@ const toProcessDefinitionInput = (raw: RawServiceConfig, index: number): Process
 
   return {
     name: raw.name,
-    command: raw.command as CommandSpec,
-    working_dir: raw.working_dir,
-    env,
-    restart_policy: raw.restart_policy as ProcessDefinitionInput["restart_policy"],
-    depends_on: raw.depends_on,
+    launchInstruction: raw.command as CommandSpec,
+    workingDir: raw.working_dir,
+    environment: env,
+    restartRule: raw.restart_policy as ProcessDefinitionInput["restartRule"],
+    startupDependencies: raw.depends_on,
   };
 };
 

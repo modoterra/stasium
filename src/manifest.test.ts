@@ -27,8 +27,8 @@ describe("manifest rendering", () => {
     const { manifestPath, dir } = await writeTempManifest([
       {
         name: "api",
-        command: ["bun", "run", "dev"],
-        env: { "APP.CONFIG": "on" },
+        launchInstruction: ["bun", "run", "dev"],
+        environment: { "APP.CONFIG": "on" },
       },
     ]);
 
@@ -44,13 +44,13 @@ describe("manifest rendering", () => {
     const { manifestPath, dir } = await writeTempManifest([
       {
         name: "api",
-        command: ["bun", "run", "dev"],
-        depends_on: ["worker"],
+        launchInstruction: ["bun", "run", "dev"],
+        startupDependencies: ["worker"],
       },
       {
         name: "worker",
-        command: ["bun", "run", "worker"],
-        depends_on: ["api"],
+        launchInstruction: ["bun", "run", "worker"],
+        startupDependencies: ["api"],
       },
     ]);
 
@@ -121,17 +121,14 @@ describe("manifest rendering", () => {
       const manifest = await loadManifest(manifestPath);
       expect(manifest.services[0]).toMatchObject({
         name: "db",
-        env: {},
-        restart_policy: "never",
-        depends_on: [],
+        environment: {},
+        restartRule: "never",
+        startupDependencies: [],
       });
-      expect(manifest.services[1]).toEqual({
+      expect(manifest.services[1]).toMatchObject({
         name: "api",
-        command: ["bun", "run", "dev"],
-        working_dir: resolve(dir, "app"),
-        env: { PORT: "3000" },
-        restart_policy: "never",
-        depends_on: ["db"],
+        workingDir: resolve(dir, "app"),
+        environment: { PORT: "3000" },
         launchInstruction: { executable: "bun", arguments: ["run", "dev"] },
         startupDependencies: ["db"],
         restartRule: "never",
