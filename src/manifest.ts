@@ -7,7 +7,14 @@ import {
 } from "./process-definition";
 import { ServiceGraphError, validateServiceGraph } from "./service-graph";
 import { getErrorMessage } from "./shared";
-import type { AppConfig, AppDockerConfig, CommandSpec, Manifest, ServiceConfig } from "./types";
+import type {
+  AppConfig,
+  AppDockerConfig,
+  CommandSpec,
+  Manifest,
+  ProcessDefinition,
+  ServiceConfig,
+} from "./types";
 
 type RawManifest = {
   app?: {
@@ -193,7 +200,7 @@ export const loadManifest = async (path?: string): Promise<Manifest> => {
 
   const app = normalizeApp(parsed.app);
   const inputs = services.map((service, index) => toProcessDefinitionInput(service, index));
-  const normalized = ((): ServiceConfig[] => {
+  const normalized = ((): ProcessDefinition[] => {
     try {
       return normalizeProcessDefinitions(inputs, { baseDir: dirname(resolve(manifestPath)) });
     } catch (error) {
