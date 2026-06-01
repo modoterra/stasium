@@ -21,7 +21,7 @@ const LOGS_SHORTCUTS: Shortcut[] = [
   { key: "c", label: "clear" },
 ];
 
-const DOCKER_SHORTCUTS: Shortcut[] = [
+const EXTERNAL_RUNTIME_SHORTCUTS: Shortcut[] = [
   { key: "s", label: "start" },
   { key: "x", label: "stop" },
   { key: "r", label: "restart" },
@@ -52,7 +52,7 @@ const GLOBAL_SHORTCUTS: Shortcut[] = [
   { key: "pgup/pgdn", label: "log page" },
   { key: "home/end", label: "log jump" },
   { key: "1", label: "manifest panel" },
-  { key: "2", label: "docker panel" },
+  { key: "2", label: "external panel" },
   { key: "3", label: "logs panel" },
   { key: "4", label: "all panels" },
   { key: "tab", label: "switch panel" },
@@ -62,7 +62,7 @@ const GLOBAL_SHORTCUTS: Shortcut[] = [
 const PANEL_SHORTCUTS: Record<PanelId, Shortcut[]> = {
   manifest: MANIFEST_SHORTCUTS,
   logs: LOGS_SHORTCUTS,
-  docker: DOCKER_SHORTCUTS,
+  external: EXTERNAL_RUNTIME_SHORTCUTS,
 };
 
 const MODE_SHORTCUTS: Record<AppMode, Shortcut[] | null> = {
@@ -79,8 +79,8 @@ export class FocusManager {
   private mode: AppMode = "normal";
   private readonly updateCallbacks: Set<FocusUpdateCallback> = new Set();
 
-  constructor(hasDocker: boolean) {
-    this.panels = hasDocker ? ["manifest", "docker", "logs"] : ["manifest", "logs"];
+  constructor(hasExternalRuntime: boolean) {
+    this.panels = hasExternalRuntime ? ["manifest", "external", "logs"] : ["manifest", "logs"];
     this.visiblePanels = [...this.panels];
     this.activePanel = "manifest";
   }
@@ -162,9 +162,9 @@ export class FocusManager {
     const modeShortcuts = MODE_SHORTCUTS[this.mode];
     if (modeShortcuts) return modeShortcuts;
     const panelShortcuts = PANEL_SHORTCUTS[this.activePanel] ?? [];
-    const globalShortcuts = this.panels.includes("docker")
+    const globalShortcuts = this.panels.includes("external")
       ? GLOBAL_SHORTCUTS
-      : GLOBAL_SHORTCUTS.filter((shortcut) => shortcut.label !== "docker panel");
+      : GLOBAL_SHORTCUTS.filter((shortcut) => shortcut.label !== "external panel");
     return [...panelShortcuts, ...globalShortcuts];
   }
 

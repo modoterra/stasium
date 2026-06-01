@@ -28,11 +28,11 @@ describe("FocusManager", () => {
 
   test("toggles panel visibility and moves focus off hidden panel", () => {
     const focus = new FocusManager(true);
-    focus.setActivePanel("docker");
+    focus.setActivePanel("external");
 
-    focus.togglePanel("docker");
+    focus.togglePanel("external");
 
-    expect(focus.isPanelVisible("docker")).toBe(false);
+    expect(focus.isPanelVisible("external")).toBe(false);
     expect(focus.getActivePanel()).toBe("manifest");
   });
 
@@ -48,7 +48,7 @@ describe("FocusManager", () => {
   test("cycles only through visible panels", () => {
     const focus = new FocusManager(true);
 
-    focus.togglePanel("docker");
+    focus.togglePanel("external");
     focus.cyclePanel();
 
     expect(focus.getActivePanel()).toBe("logs");
