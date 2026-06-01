@@ -89,6 +89,25 @@ describe("Manifest Editing", () => {
     }
   });
 
+  test("does not apply a Process Definition when the Manifest cannot be saved", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
+    try {
+      const claims = new TestClaims(dir);
+      const manager = new ServiceManager([], { processClaimStore: claims });
+
+      await expect(
+        addProcessDefinition(
+          { manifestPath: dir, manager, processClaimStore: claims },
+          { name: "api", command: "bun run dev" },
+        ),
+      ).rejects.toThrow();
+
+      expect(manager.getConfigs()).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("replaces a Process Definition and releases the old Process Claim name", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
     const manifestPath = join(dir, "stasium.toml");
@@ -115,6 +134,29 @@ describe("Manifest Editing", () => {
       expect(manifest.services.map((config) => config.name)).toEqual(["web"]);
       expect(claims.releasedNames).toEqual(["api"]);
       expect(manager.getSelectedView()?.restartInMs).toBeNull();
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("does not replace or release claims when the Manifest cannot be saved", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
+    try {
+      const original = normalizeProcessDefinition({ name: "api", command: "bun run dev" });
+      const claims = new TestClaims(dir);
+      const manager = new ServiceManager([original], { processClaimStore: claims });
+      const replacement = normalizeProcessDefinition({ name: "web", command: "bun run dev" });
+
+      await expect(
+        replaceProcessDefinition(
+          { manifestPath: dir, manager, processClaimStore: claims },
+          0,
+          renderServiceBlock(replacement),
+        ),
+      ).rejects.toThrow();
+
+      expect(manager.getConfigs().map((config) => config.name)).toEqual(["api"]);
+      expect(claims.releasedNames).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
