@@ -94,6 +94,40 @@ describe("Manifest Editing", () => {
     }
   });
 
+  test("covers Direct Managed Process collection mutations without renderer setup", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
+    const manifestPath = join(dir, "stasium.toml");
+    try {
+      await saveManifest(manifestPath, []);
+      const claims = new TestClaims(dir);
+      const manager = new ServiceManager([], { processClaimStore: claims });
+
+      await addProcessDefinition(
+        { manifestPath, manager, processClaimStore: claims },
+        { name: "api", launchInstruction: ["bun", "--version"] },
+      );
+
+      const replacement = normalizeProcessDefinition({
+        name: "web",
+        launchInstruction: ["bun", "--version"],
+      });
+      await replaceProcessDefinition(
+        { manifestPath, manager, processClaimStore: claims },
+        0,
+        renderServiceBlock(replacement),
+      );
+
+      await removeSelectedProcessDefinition({ manifestPath, manager, processClaimStore: claims });
+
+      const manifest = await loadManifest(manifestPath);
+      expect(manager.getConfigs()).toEqual([]);
+      expect(manifest.services).toEqual([]);
+      expect(claims.cleanedUpNames).toEqual(["api", "web"]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("validates the next Process Definition collection before saving", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
     const manifestPath = join(dir, "stasium.toml");
