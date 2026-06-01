@@ -113,6 +113,34 @@ describe("discovery engine", () => {
     }
   });
 
+  test("drops invalid raw candidate proposals with warnings", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-discovery-engine-"));
+
+    try {
+      const strategy: DiscoveryStrategy = {
+        id: "shell-style",
+        label: "Shell style",
+        priority: 100,
+        default_selected: true,
+        when: emptyWhen(),
+        capture: [],
+        service: {
+          name: "api",
+          command: "bun run dev && bun run worker",
+        },
+      };
+
+      const detected = await detectDiscoveryCandidates(dir, [strategy]);
+
+      expect(detected.candidates).toEqual([]);
+      expect(detected.warnings).toEqual([
+        "Strategy 'shell-style' produced an invalid Process Definition: command contains shell operator '&'. Use an argv array instead of shell syntax.",
+      ]);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("supports TOML path and regex predicates", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-discovery-engine-"));
 
