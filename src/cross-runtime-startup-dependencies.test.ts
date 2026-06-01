@@ -126,6 +126,7 @@ describe("cross-runtime Startup Dependencies", () => {
 
   test("blocks Startup when a visible External Managed Process stays unavailable", async () => {
     const actions: string[] = [];
+    const claims = new TestClaims(process.cwd());
     const externalRuntimeManager = new ExternalRuntimeVisibilityManager([
       externalRuntime(() => [externalProcess("db", "exited")], actions),
     ]);
@@ -137,7 +138,7 @@ describe("cross-runtime Startup Dependencies", () => {
           startupDependencies: ["docker-compose:db"],
         }),
       ],
-      { externalRuntimeManager, launchAdapter: launchPid(40) },
+      { externalRuntimeManager, launchAdapter: launchPid(40), processClaimStore: claims },
     );
 
     await manager.startAll();
@@ -145,6 +146,10 @@ describe("cross-runtime Startup Dependencies", () => {
     expect(actions).toEqual(["start:db"]);
     expect(manager.getSelectedView()?.state).toBe("BLOCKED");
     expect(manager.getServicePids()).toEqual([]);
+    expect(claims.claims).toEqual([]);
+    expect(manager.getSelectedView()?.log.all().at(-1)?.line).toBe(
+      'Startup blocked by failed Startup Dependency "docker-compose:db".',
+    );
   });
 
   test("claims only Direct Managed Processes when Startup starts an external dependency", async () => {

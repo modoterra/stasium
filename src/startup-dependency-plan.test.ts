@@ -107,4 +107,37 @@ describe("Startup Dependency planning", () => {
     ]);
     expect(plan.blockedStatesFor(["db"])).toEqual(getBlockedProcessStates(plan, ["db"]));
   });
+
+  test("represents external availability blockers in the same blocked-state model", () => {
+    const plan = planStartupDependencies(
+      [
+        processDefinition({
+          name: "api",
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["docker-compose:db"],
+        }),
+        processDefinition({
+          name: "worker",
+          launchInstruction: ["bun", "run", "worker"],
+          startupDependencies: ["api"],
+        }),
+      ],
+      { allowExternalDependencies: true },
+    );
+
+    expect(plan.blockedStatesFor(["docker-compose:db"])).toEqual([
+      {
+        name: "api",
+        state: "BLOCKED",
+        blockedBy: ["docker-compose:db"],
+        reason: 'Startup Dependency "docker-compose:db" failed to become available.',
+      },
+      {
+        name: "worker",
+        state: "BLOCKED",
+        blockedBy: ["api"],
+        reason: 'Startup Dependency "api" failed to become available.',
+      },
+    ]);
+  });
 });
