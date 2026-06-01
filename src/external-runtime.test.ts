@@ -70,6 +70,36 @@ describe("ExternalRuntimeVisibilityManager", () => {
     ]);
   });
 
+  test("exposes refreshed snapshots without requiring selection state", async () => {
+    let processes = [process("docker", "db")];
+    const manager = new ExternalRuntimeVisibilityManager([
+      runtime("docker", processes),
+      runtime("podman", [process("podman", "cache")]),
+    ]);
+
+    await manager.refresh();
+    processes.splice(0, processes.length, process("docker", "api"));
+    await manager.refresh();
+
+    expect(manager.getProcesses().map((entry) => `${entry.runtimeId}:${entry.name}`)).toEqual([
+      "docker:api",
+      "podman:cache",
+    ]);
+  });
+
+  test("preserves selected External Managed Process by snapshot key", async () => {
+    let processes = [process("docker", "db"), process("docker", "api")];
+    const manager = new ExternalRuntimeVisibilityManager([runtime("docker", processes)]);
+    await manager.refresh();
+    manager.setSelectedIndex(1);
+
+    processes.splice(0, processes.length, process("docker", "api"), process("docker", "db"));
+    await manager.refresh();
+
+    expect(manager.getSelectedIndex()).toBe(0);
+    expect(manager.getSelectedProcess()?.name).toBe("api");
+  });
+
   test("forwards selected lifecycle actions to the owning External Runtime", async () => {
     const actions: string[] = [];
     const manager = new ExternalRuntimeVisibilityManager([
