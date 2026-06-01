@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import { type KeyEvent, createCliRenderer } from "@opentui/core";
-import { createDockerComposeExternalRuntimeAdapter } from "./docker";
-import { ExternalRuntimeVisibilityManager, detectExternalRuntimes } from "./external-runtime";
+import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { FocusManager } from "./focus";
 import { DiscoverySelection, detectServices, formatServiceSummary } from "./init";
 import {
@@ -10,22 +9,16 @@ import {
   removeSelectedProcessDefinition,
   replaceProcessDefinition,
 } from "./manifest-editing";
-import { loadManifest, renderServiceBlock } from "./manifest";
+import { renderServiceBlock } from "./manifest";
 import { ProcessClaimStore } from "./process-claim";
 import { createProjectManifest } from "./project-setup";
 import { ServiceManager } from "./service-manager";
 import { fileExists, getErrorMessage } from "./shared";
-import { createShutdownHandler } from "./shutdown";
-import type { AppConfig, Shortcut } from "./types";
+import type { AppConfig, Manifest, Shortcut } from "./types";
 import { type UiControls, buildInitUi, buildUi } from "./ui";
+import { startWorkspace, type ShutdownController } from "./workspace-startup";
 
 const MANIFEST_PATH = "stasium.toml";
-
-type ShutdownController = {
-  run: (reason?: string) => Promise<void>;
-  install: () => void;
-  uninstall: () => void;
-};
 
 type AppRuntime = {
   disposed: boolean;
@@ -649,9 +642,6 @@ const setupKeybindings = (
   });
 };
 
-const isExternalRuntimeVisibilityEnabled = (appConfig: AppConfig | undefined): boolean =>
-  appConfig?.docker?.enabled ?? true;
-
 const mountMainUiSession = (
   renderer: Awaited<ReturnType<typeof createCliRenderer>>,
   teardownRef: { current: (() => void) | null },
@@ -659,9 +649,10 @@ const mountMainUiSession = (
   shutdown: ShutdownController,
   manifestPath: string,
   manager: ServiceManager,
-  manifest: Awaited<ReturnType<typeof loadManifest>>,
+  manifest: Manifest,
   appConfig: AppConfig | undefined,
   externalRuntimeManager: ExternalRuntimeVisibilityManager | null,
+  processClaimStore: ProcessClaimStore,
 ): MainUiSession => {
   const focusManager = new FocusManager(externalRuntimeManager !== null);
   const { teardown, controls } = buildUi({
@@ -686,14 +677,10 @@ const mountMainUiSession = (
     appConfig,
     runtime,
     shutdown,
-    new ProcessClaimStore(process.cwd(), { logger: (message) => console.error(message) }),
+    processClaimStore,
   );
 
   controls.renderAll();
-
-  if (externalRuntimeManager && !runtime.closing && !runtime.disposed) {
-    externalRuntimeManager.startPolling();
-  }
 
   return {
     teardown,
@@ -709,59 +696,39 @@ const startApp = async (
   shutdownRef: { current: ShutdownController | null },
   runtime: AppRuntime,
 ) => {
-  const manifest = await loadManifest(MANIFEST_PATH);
-  const processClaimStore = new ProcessClaimStore(process.cwd(), {
-    logger: (message) => console.error(message),
-  });
-  const appConfig = manifest.app;
   const manifestPath = resolve(process.cwd(), MANIFEST_PATH);
-  const externalRuntimes = isExternalRuntimeVisibilityEnabled(appConfig)
-    ? await detectExternalRuntimes(process.cwd(), [createDockerComposeExternalRuntimeAdapter()])
-    : [];
-  const externalRuntimeManager =
-    externalRuntimes.length > 0 ? new ExternalRuntimeVisibilityManager(externalRuntimes) : null;
-  const manager = new ServiceManager(manifest.services, {
-    processClaimStore,
-    externalRuntimeManager,
-  });
-
   shutdownRef.current?.uninstall();
-  const shutdown = createShutdownHandler({
+
+  await startWorkspace({
     cwd: process.cwd(),
-    manager,
-    externalRuntimeManager,
-    getServicePids: () => manager.getServicePids(),
-    logger: (message) => console.error(message),
-  });
-  shutdown.install();
-  shutdownRef.current = shutdown;
-
-  mountMainUiSession(
-    renderer,
-    teardownRef,
-    runtime,
-    shutdown,
     manifestPath,
-    manager,
-    manifest,
-    appConfig,
-    externalRuntimeManager,
-  );
-
-  void (async () => {
-    try {
-      await processClaimStore.cleanupStaleDirectManagedProcessClaims(
-        manifest.services.map((service) => service.name),
+    runtime,
+    logger: (message) => console.error(message),
+    onShutdownReady: (shutdown) => {
+      shutdownRef.current = shutdown;
+    },
+    mountWorkspace: ({
+      manifest,
+      appConfig,
+      manager,
+      processClaimStore,
+      externalRuntimeManager,
+      shutdown,
+    }) => {
+      mountMainUiSession(
+        renderer,
+        teardownRef,
+        runtime,
+        shutdown,
+        manifestPath,
+        manager,
+        manifest,
+        appConfig,
+        externalRuntimeManager,
+        processClaimStore,
       );
-      if (runtime.closing || runtime.disposed) return;
-
-      await manager.startAll({
-        shouldCancel: () => runtime.closing || runtime.disposed,
-      });
-    } catch (error) {
-      console.error(getErrorMessage(error));
-    }
-  })();
+    },
+  });
 };
 
 const startInitFlow = (
