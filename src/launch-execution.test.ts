@@ -70,7 +70,9 @@ describe("LaunchInstructionExecutionAdapter", () => {
 
     const handle = await adapter.start(
       { argv: ["missing"], workingDir: "/project", env: {} },
-      (event) => events.push(event),
+      (event) => {
+        events.push(event);
+      },
     );
 
     expect(handle).toBeNull();
@@ -99,9 +101,9 @@ describe("LaunchInstructionExecutionAdapter", () => {
       }),
     });
 
-    await adapter.start({ argv: ["bun"], workingDir: "/project", env: {} }, (event) =>
-      events.push(event),
-    );
+    await adapter.start({ argv: ["bun"], workingDir: "/project", env: {} }, (event) => {
+      events.push(event);
+    });
     await flush();
 
     expect(events).toContainEqual({

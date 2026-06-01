@@ -2,6 +2,7 @@ import { DirectManagedProcessCollectionLifecycle } from "./direct-managed-proces
 import { DirectManagedProcessLifecycle } from "./direct-managed-process-lifecycle";
 import { LogBuffer } from "./log-buffer";
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
+import { ProcessClaimStore } from "./process-claim";
 import { type ServiceEvent, ServiceProcess } from "./service";
 import { ServiceGraphError } from "./service-graph";
 import { StartupDependencyPlanError } from "./startup-dependency-plan";
@@ -22,6 +23,7 @@ export type UpdateCallback = () => void;
 
 export interface ServiceManagerOptions {
   launchAdapter?: LaunchInstructionExecutionAdapter;
+  processClaimStore?: ProcessClaimStore | null;
 }
 
 const LOG_CAPACITY = 2000;
@@ -41,6 +43,7 @@ export class ServiceManager {
   private readonly lifecycles: Map<ServiceProcess, DirectManagedProcessLifecycle> = new Map();
   private readonly collectionLifecycle: DirectManagedProcessCollectionLifecycle;
   private readonly launchAdapter: LaunchInstructionExecutionAdapter;
+  private readonly processClaimStore: ProcessClaimStore | null;
   private restartTicker: ReturnType<typeof setInterval> | null = null;
   private readonly updateCallbacks: Set<UpdateCallback> = new Set();
   private readonly processCallbacks: Set<UpdateCallback> = new Set();
@@ -48,9 +51,12 @@ export class ServiceManager {
 
   constructor(configs: ServiceConfig[], options: ServiceManagerOptions = {}) {
     this.launchAdapter = options.launchAdapter ?? new LaunchInstructionExecutionAdapter();
+    this.processClaimStore = options.processClaimStore ?? null;
     this.collectionLifecycle = new DirectManagedProcessCollectionLifecycle(() => this.getConfigs());
     this.assertValidConfigGraph(configs);
-    this.services = configs.map((config) => new ServiceProcess(config, this.launchAdapter));
+    this.services = configs.map(
+      (config) => new ServiceProcess(config, this.launchAdapter, this.processClaimStore),
+    );
     this.views = this.services.map((service) => ({
       name: service.config.name,
       state: "STOPPED",
@@ -214,7 +220,7 @@ export class ServiceManager {
 
     this.assertValidConfigGraph([...this.getConfigs(), config]);
 
-    const process = new ServiceProcess(config, this.launchAdapter);
+    const process = new ServiceProcess(config, this.launchAdapter, this.processClaimStore);
     this.services.push(process);
     this.views.push({
       name: config.name,
@@ -277,7 +283,7 @@ export class ServiceManager {
     this.clearServiceRuntimeState(oldService);
     this.unsubscribers[index]?.();
 
-    const newProcess = new ServiceProcess(config, this.launchAdapter);
+    const newProcess = new ServiceProcess(config, this.launchAdapter, this.processClaimStore);
     this.services[index] = newProcess;
 
     const view = this.views[index];

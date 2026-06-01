@@ -10,6 +10,7 @@ export type LaunchExecutionEvent =
     }
   | { type: "output"; entry: LogEntry }
   | { type: "spawn-failed"; message: string }
+  | { type: "start-rejected"; message: string }
   | { type: "exit"; code: number | null; signal: string | null };
 
 export interface LaunchInstructionInput {
@@ -24,7 +25,7 @@ export interface LaunchExecutionHandle {
   signal: (signal: NodeJS.Signals) => void;
 }
 
-type LaunchEventHandler = (event: LaunchExecutionEvent) => void;
+type LaunchEventHandler = (event: LaunchExecutionEvent) => Promise<void> | void;
 type PathReader = (cwd: string) => Promise<string | null>;
 type ProcessInfoReader = (pid: number) => Promise<LiveProcessInfo | null>;
 type SignalProcessGroup = (pid: number, signal: NodeJS.Signals) => boolean;
@@ -153,8 +154,8 @@ export class LaunchInstructionExecutionAdapter {
       });
     } catch (error) {
       const message = getErrorMessage(error);
-      onEvent({ type: "spawn-failed", message });
-      onEvent({
+      await onEvent({ type: "spawn-failed", message });
+      await onEvent({
         type: "output",
         entry: { timestamp: this.now(), line: message, stream: "stderr" },
       });
@@ -162,12 +163,23 @@ export class LaunchInstructionExecutionAdapter {
     }
 
     const processInfo = await this.processInfoReader(proc.pid);
-    onEvent({
-      type: "started",
-      pid: proc.pid,
-      startedAt: processInfo?.startedAt ?? this.now(),
-      identityVerified: processInfo !== null,
-    });
+    try {
+      await onEvent({
+        type: "started",
+        pid: proc.pid,
+        startedAt: processInfo?.startedAt ?? this.now(),
+        identityVerified: processInfo !== null,
+      });
+    } catch (error) {
+      const message = getErrorMessage(error);
+      proc.kill("SIGTERM");
+      await onEvent({ type: "start-rejected", message });
+      await onEvent({
+        type: "output",
+        entry: { timestamp: this.now(), line: message, stream: "stderr" },
+      });
+      return null;
+    }
 
     this.attachStream(proc.stdout, "stdout", onEvent);
     this.attachStream(proc.stderr, "stderr", onEvent);
