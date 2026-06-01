@@ -26,6 +26,44 @@ irm https://raw.githubusercontent.com/modoterra/stasium/main/install.ps1 | iex
 | `stasium-macos-arm64`     | macOS Apple Silicon |
 | `stasium-windows-x64.exe` | Windows x86_64      |
 
+## Startup Updates
+
+Stasium checks the stable Update Channel on startup before opening Project Setup or the Workspace.
+Update checks are bounded and fail open: network failures, unavailable metadata, unsupported
+platforms, and unsafe installs are reported as warnings and do not stop normal usage.
+
+Release assets are checksum-verified before Stasium replaces a binary. Stasium only self-updates
+executables that look like Stasium binaries; package-manager-owned installs, development runs, or
+other unsafe paths fall back to manual update instructions.
+
+Startup update preferences live outside project Manifests at:
+
+```text
+~/.config/stasium/update.json
+```
+
+Default preferences:
+
+```json
+{
+  "enabled": true,
+  "channel": "stable"
+}
+```
+
+To disable startup update checks:
+
+```json
+{
+  "enabled": false,
+  "channel": "stable"
+}
+```
+
+Supported auto-update assets match the release binaries listed above. If Stasium reports that an
+update cannot be applied automatically, download the matching asset from GitHub Releases and replace
+your installed binary manually or through the package manager that installed it.
+
 ## Development
 
 Install dependencies:
