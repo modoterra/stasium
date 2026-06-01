@@ -316,20 +316,9 @@ export const cleanupExistingPids = async (
   }
 };
 
-type SyncOptions = {
-  knownServices?: string[];
-  logger?: (message: string) => void;
-  timeoutMs?: number;
-};
-
-export const syncPidFiles = async (
-  cwd: string,
-  services: ServicePid[],
-  { knownServices = [], logger, timeoutMs = DEFAULT_WAIT_MS }: SyncOptions = {},
-): Promise<void> => {
+export const writePidFiles = async (cwd: string, services: ServicePid[]): Promise<void> => {
   const dir = await ensurePidDir(cwd);
   const desired = new Map<string, PidFileRecord>();
-  const known = new Set(knownServices.map((name) => sanitizeServiceName(name)));
 
   for (const service of services) {
     if (!service.pid || service.pid <= 0 || service.startedAt.length === 0) continue;
@@ -350,24 +339,6 @@ export const syncPidFiles = async (
       if (pid === process.pid) return;
       if (!isProcessAlive(pid)) {
         await safeUnlink(path);
-        return;
-      }
-      const serviceName = getServiceNameFromFile(path);
-      const unknown = known.size > 0 && !known.has(serviceName);
-      if (unknown) {
-        logger?.(`Found PID ${pid} for removed service: ${serviceName}.`);
-        if (parsed.kind === "legacy" || !parsed.record.identityVerified) {
-          logger?.(`Skipping live PID ${pid}; pidfile identity cannot be verified safely.`);
-          return;
-        }
-        if (!(await liveProcessMatchesRecord(parsed.record))) {
-          logger?.(`Skipping PID ${pid}; pidfile identity no longer matches the live process.`);
-          return;
-        }
-        const stopped = await stopPid(pid, timeoutMs);
-        if (stopped) {
-          await safeUnlink(path);
-        }
         return;
       }
     }),

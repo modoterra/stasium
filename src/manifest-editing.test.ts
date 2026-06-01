@@ -29,19 +29,19 @@ const launchPid = (pid: number): LaunchInstructionExecutionAdapter =>
   });
 
 class TestClaims extends ProcessClaimStore {
-  releasedNames: string[] = [];
+  cleanedUpNames: string[] = [];
 
   override async claimDirectManagedProcess(): Promise<void> {}
 
   override async releaseDirectManagedProcess(): Promise<void> {}
 
-  override async releaseDirectManagedProcessNames(names: string[]): Promise<void> {
-    this.releasedNames.push(...names);
+  override async cleanupRemovedDirectManagedProcessClaims(names: string[]): Promise<void> {
+    this.cleanedUpNames.push(...names);
   }
 }
 
 class FailingReleaseClaims extends TestClaims {
-  override async releaseDirectManagedProcessNames(): Promise<void> {
+  override async cleanupRemovedDirectManagedProcessClaims(): Promise<void> {
     throw new Error("release failed");
   }
 }
@@ -114,7 +114,7 @@ describe("Manifest Editing", () => {
     }
   });
 
-  test("replaces a Process Definition and releases the old Process Claim name", async () => {
+  test("replaces a Process Definition and cleans up the old Process Claim name", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
     const manifestPath = join(dir, "stasium.toml");
     try {
@@ -138,14 +138,14 @@ describe("Manifest Editing", () => {
       const manifest = await loadManifest(manifestPath);
       expect(manager.getConfigs().map((config) => config.name)).toEqual(["web"]);
       expect(manifest.services.map((config) => config.name)).toEqual(["web"]);
-      expect(claims.releasedNames).toEqual(["api"]);
+      expect(claims.cleanedUpNames).toEqual(["api"]);
       expect(manager.getSelectedView()?.restartInMs).toBeNull();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  test("does not replace or release claims when the Manifest cannot be saved", async () => {
+  test("does not replace or clean up claims when the Manifest cannot be saved", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
     try {
       const original = normalizeProcessDefinition({ name: "api", command: "bun run dev" });
@@ -162,7 +162,7 @@ describe("Manifest Editing", () => {
       ).rejects.toThrow();
 
       expect(manager.getConfigs().map((config) => config.name)).toEqual(["api"]);
-      expect(claims.releasedNames).toEqual([]);
+      expect(claims.cleanedUpNames).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -187,13 +187,15 @@ describe("Manifest Editing", () => {
       const manifest = await loadManifest(manifestPath);
       expect(manager.getConfigs().map((config) => config.name)).toEqual(["web"]);
       expect(manifest.services.map((config) => config.name)).toEqual(["web"]);
-      expect(result.warnings).toEqual(["Failed to release Process Claims: release failed"]);
+      expect(result.warnings).toEqual([
+        "Failed to clean up removed Process Claims: release failed",
+      ]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
   });
 
-  test("deletes the selected Process Definition and releases its Process Claim name", async () => {
+  test("deletes the selected Process Definition and cleans up its Process Claim name", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-edit-"));
     const manifestPath = join(dir, "stasium.toml");
     try {
@@ -207,7 +209,7 @@ describe("Manifest Editing", () => {
       const manifest = await loadManifest(manifestPath);
       expect(manager.getConfigs()).toEqual([]);
       expect(manifest.services).toEqual([]);
-      expect(claims.releasedNames).toEqual(["api"]);
+      expect(claims.cleanedUpNames).toEqual(["api"]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
