@@ -1,0 +1,98 @@
+import {
+  ServiceGraphError,
+  getTopologicalServiceLayers,
+  getTopologicalServiceOrder,
+  validateServiceGraph,
+} from "./service-graph";
+import type { ServiceConfig } from "./types";
+
+export type BlockedProcessState = {
+  name: string;
+  state: "BLOCKED";
+  blockedBy: string[];
+  reason: string;
+};
+
+export interface StartupDependencyPlan {
+  processDefinitions: ServiceConfig[];
+  startupOrder: string[];
+  startupLayers: string[][];
+  shutdownOrder: string[];
+}
+
+export class StartupDependencyPlanError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StartupDependencyPlanError";
+  }
+}
+
+const toPlanningError = (error: unknown): never => {
+  if (error instanceof ServiceGraphError) {
+    throw new StartupDependencyPlanError(error.message);
+  }
+  throw error;
+};
+
+const cloneProcessDefinitions = (processDefinitions: ServiceConfig[]): ServiceConfig[] =>
+  processDefinitions.map((processDefinition) => ({
+    name: processDefinition.name,
+    command: [...processDefinition.command],
+    working_dir: processDefinition.working_dir,
+    env: { ...processDefinition.env },
+    restart_policy: processDefinition.restart_policy,
+    depends_on: [...processDefinition.depends_on],
+  }));
+
+export const planStartupDependencies = (
+  processDefinitions: ServiceConfig[],
+): StartupDependencyPlan => {
+  const cloned = cloneProcessDefinitions(processDefinitions);
+
+  try {
+    validateServiceGraph(cloned);
+    const startupOrder = getTopologicalServiceOrder(cloned);
+    return {
+      processDefinitions: cloned,
+      startupOrder,
+      startupLayers: getTopologicalServiceLayers(cloned),
+      shutdownOrder: [...startupOrder].reverse(),
+    };
+  } catch (error) {
+    toPlanningError(error);
+  }
+  throw new StartupDependencyPlanError("Invalid Startup Dependency plan");
+};
+
+export const getBlockedProcessStates = (
+  plan: StartupDependencyPlan,
+  unavailableNames: Iterable<string>,
+): BlockedProcessState[] => {
+  const unavailable = new Set(unavailableNames);
+  const blocked: BlockedProcessState[] = [];
+  const byName = new Map(
+    plan.processDefinitions.map((processDefinition) => [processDefinition.name, processDefinition]),
+  );
+
+  for (const name of plan.startupOrder) {
+    if (unavailable.has(name)) continue;
+
+    const processDefinition = byName.get(name);
+    if (!processDefinition) continue;
+
+    const blockedBy = processDefinition.depends_on.filter((dependency) =>
+      unavailable.has(dependency),
+    );
+    if (blockedBy.length === 0) continue;
+
+    unavailable.add(name);
+    blocked.push({
+      name,
+      state: "BLOCKED",
+      blockedBy,
+      reason: `Startup Dependency ${blockedBy.map((dependency) => `"${dependency}"`).join(", ")} failed to become available.`,
+    });
+  }
+
+  return blocked;
+};
