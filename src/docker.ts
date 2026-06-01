@@ -1,7 +1,12 @@
 import { resolve } from "node:path";
+import type {
+  ExternalRuntime,
+  ExternalRuntimeAdapter,
+  ExternalRuntimeOutputStream,
+} from "./external-runtime";
 import { LogBuffer } from "./log-buffer";
 import { fileExists } from "./shared";
-import type { DockerService, DockerServiceState } from "./types";
+import type { DockerService, DockerServiceState, ExternalManagedProcess, LogEntry } from "./types";
 
 const COMPOSE_FILES = ["compose.yml", "compose.yaml", "docker-compose.yml", "docker-compose.yaml"];
 
@@ -126,6 +131,183 @@ interface DockerPsEntry {
   State?: string;
   Status?: string;
   Ports?: string;
+}
+
+export const createDockerComposeExternalRuntimeAdapter = (): ExternalRuntimeAdapter => ({
+  id: "docker-compose",
+  name: "Docker Compose",
+  detect: async (cwd) => {
+    const composePath = await detectComposeFile(cwd);
+    return composePath ? new DockerComposeExternalRuntime(composePath) : null;
+  },
+});
+
+class DockerComposeExternalRuntime implements ExternalRuntime {
+  readonly id = "docker-compose";
+  readonly name = "Docker Compose";
+  private readonly composePath: string;
+  private readonly cwd: string;
+
+  constructor(composePath: string) {
+    this.composePath = composePath;
+    this.cwd = resolve(composePath, "..");
+  }
+
+  async snapshot(): Promise<ExternalManagedProcess[]> {
+    let configServices: string[] = [];
+    try {
+      const configProc = Bun.spawn({
+        cmd: ["docker", "compose", "-f", this.composePath, "config", "--services"],
+        cwd: this.cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const configOutput = await new Response(configProc.stdout).text();
+      const exitCode = await configProc.exited;
+      if (exitCode === 0) {
+        configServices = splitLines(configOutput);
+      }
+    } catch {
+      // ignore config errors
+    }
+
+    const proc = Bun.spawn({
+      cmd: ["docker", "compose", "-f", this.composePath, "ps", "--format", "json", "-a"],
+      cwd: this.cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    const output = await new Response(proc.stdout).text();
+    await proc.exited;
+
+    const entries = parsePsOutput(output);
+    const entriesByService = new Map<string, DockerPsEntry[]>();
+    const entryOrder: string[] = [];
+
+    for (const entry of entries) {
+      const name = entry.Service ?? entry.Name ?? "unknown";
+      const list = entriesByService.get(name);
+      if (list) {
+        list.push(entry);
+      } else {
+        entriesByService.set(name, [entry]);
+        entryOrder.push(name);
+      }
+    }
+
+    return getStableDockerServiceNames(configServices, entryOrder).map((name) => {
+      const list = entriesByService.get(name) ?? [];
+      if (list.length === 0) {
+        return {
+          runtimeId: this.id,
+          runtimeName: this.name,
+          name,
+          state: "created",
+          status: "",
+          ports: "",
+        };
+      }
+
+      const state = pickAggregateState(list);
+      const representative =
+        list.find((entry) => parseDockerState(entry.State ?? "unknown") === state) ?? list[0];
+
+      return {
+        runtimeId: this.id,
+        runtimeName: this.name,
+        name,
+        state,
+        status: representative?.Status ?? "",
+        ports: representative?.Ports ?? "",
+      };
+    });
+  }
+
+  async start(name: string): Promise<void> {
+    await this.runCompose(["up", "-d", name]);
+  }
+
+  async stop(name: string): Promise<void> {
+    await this.runCompose(["stop", name]);
+  }
+
+  async restart(name: string): Promise<void> {
+    const exitCode = await this.runCompose(["restart", name]);
+    if (exitCode !== 0) {
+      await this.runCompose(["up", "-d", name]);
+    }
+  }
+
+  streamOutput(
+    name: string,
+    onOutput: (entry: LogEntry) => void,
+  ): ExternalRuntimeOutputStream | null {
+    try {
+      const proc = Bun.spawn({
+        cmd: ["docker", "compose", "-f", this.composePath, "logs", "-f", "--tail=200", name],
+        cwd: this.cwd,
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+
+      this.readStream(proc.stdout, onOutput, "stdout");
+      this.readStream(proc.stderr, onOutput, "stderr");
+      return {
+        stop: () => {
+          try {
+            proc.kill("SIGTERM");
+          } catch {
+            // already dead
+          }
+        },
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async destroy(): Promise<void> {}
+
+  private async runCompose(args: string[]): Promise<number> {
+    const proc = Bun.spawn({
+      cmd: ["docker", "compose", "-f", this.composePath, ...args],
+      cwd: this.cwd,
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    return await proc.exited;
+  }
+
+  private readStream(
+    stream: ReadableStream<Uint8Array> | null,
+    onOutput: (entry: LogEntry) => void,
+    source: "stdout" | "stderr",
+  ): void {
+    if (!stream) return;
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let remainder = "";
+
+    const readLoop = async () => {
+      while (true) {
+        const result = await reader.read();
+        if (result.done) break;
+        const chunk = decoder.decode(result.value);
+        remainder += chunk;
+        const parts = remainder.split(/\r?\n/);
+        remainder = parts.pop() ?? "";
+        for (const line of parts) {
+          onOutput({ timestamp: new Date().toISOString(), line, stream: source });
+        }
+      }
+      if (remainder) {
+        onOutput({ timestamp: new Date().toISOString(), line: remainder, stream: source });
+      }
+    };
+
+    readLoop().catch(() => {});
+  }
 }
 
 export class DockerManager {

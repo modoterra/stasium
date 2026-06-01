@@ -9,11 +9,11 @@ import {
   TextareaRenderable,
 } from "@opentui/core";
 import type { DiscoverySelection, SelectionItem } from "./discovery";
-import type { DockerManager } from "./docker";
+import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import type { FocusManager } from "./focus";
 import type { ServiceManager, ServiceView } from "./service-manager";
 import { formatCommandSpec } from "./shared";
-import type { DockerService, LogEntry, Manifest, PanelId, Shortcut } from "./types";
+import type { ExternalManagedProcess, LogEntry, Manifest, PanelId, Shortcut } from "./types";
 
 interface Palette {
   active: string;
@@ -120,7 +120,7 @@ const stateColor = (state: ServiceView["state"], palette: Palette): string => {
   }
 };
 
-const dockerStateColor = (state: DockerService["state"], palette: Palette): string => {
+const dockerStateColor = (state: ExternalManagedProcess["state"], palette: Palette): string => {
   switch (state) {
     case "running":
       return palette.green;
@@ -139,7 +139,7 @@ const dockerStateColor = (state: DockerService["state"], palette: Palette): stri
 
 const formatState = (state: ServiceView["state"]) => state.padEnd(8, " ");
 
-const formatDockerState = (state: DockerService["state"]) => state.padEnd(10, " ");
+const formatDockerState = (state: ExternalManagedProcess["state"]) => state.padEnd(10, " ");
 
 const formatExit = (exit: number | null) => {
   if (exit === null) return "--";
@@ -183,7 +183,11 @@ const formatManifestLine = (view: ServiceView, selected: boolean, rowWidth: numb
   return `${prefix} ${status} ${name}`.slice(0, rowWidth);
 };
 
-const formatDockerLine = (service: DockerService, selected: boolean, rowWidth: number): string => {
+const formatDockerLine = (
+  service: ExternalManagedProcess,
+  selected: boolean,
+  rowWidth: number,
+): string => {
   if (rowWidth <= 0) return "";
   const prefix = selected ? ">" : " ";
   const status = formatDockerState(service.state);
@@ -260,7 +264,7 @@ export interface UiOptions {
   manifest: Manifest;
   manager: ServiceManager;
   focusManager: FocusManager;
-  dockerManager: DockerManager | null;
+  dockerManager: ExternalRuntimeVisibilityManager | null;
 }
 
 export interface UiControls {
@@ -468,7 +472,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   let dockerList: ScrollBoxRenderable | null = null;
 
   if (hasDocker) {
-    const panelParts = createPanel("Docker", "docker");
+    const panelParts = createPanel("External", "docker");
     dockerPanel = panelParts.panel;
     dockerPanelTitle = panelParts.titleText;
     dockerPanelMeta = panelParts.metaText;
@@ -600,7 +604,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     follow: "tail",
     discover: "scan",
     "manifest panel": "manifest",
-    "docker panel": "docker",
+    "docker panel": "external",
     "logs panel": "logs",
     "all panels": "all",
   };
@@ -762,21 +766,23 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     ];
 
     if (hasDocker && dockerManager) {
-      const dockerServices = dockerManager.getServices();
-      const dockerRunning = dockerServices.filter((service) => service.state === "running").length;
-      const dockerStopped = dockerServices.filter(
+      const externalProcesses = dockerManager.getProcesses();
+      const externalRunning = externalProcesses.filter(
+        (process) => process.state === "running",
+      ).length;
+      const externalStopped = externalProcesses.filter(
         (service) => service.state === "dead" || service.state === "exited",
       ).length;
 
       segments.push({
-        content: `${dockerRunning}/${dockerServices.length} docker`,
-        fg: summaryColor(dockerRunning, dockerServices.length, dockerStopped),
+        content: `${externalRunning}/${externalProcesses.length} external`,
+        fg: summaryColor(externalRunning, externalProcesses.length, externalStopped),
         panel: "docker",
       });
 
       segments.push({
-        content: `${dockerStopped} stopped`,
-        fg: dockerStopped > 0 ? palette.red : palette.muted,
+        content: `${externalStopped} stopped`,
+        fg: externalStopped > 0 ? palette.red : palette.muted,
         panel: "docker",
       });
 
@@ -868,7 +874,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const selectedDocker = dockerManager?.getSelectedService() ?? null;
     const activeLogName =
       logSource === "docker"
-        ? (selectedDocker?.name ?? "docker")
+        ? (selectedDocker?.name ?? "external")
         : (selectedManifest?.name ?? "service");
     const tailState = logsFollowTail ? "tail:on" : "tail:paused";
     const manifestState = selectedManifest?.state.toLowerCase() ?? "none";
@@ -882,7 +888,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
         fg: selectedManifest ? stateColor(selectedManifest.state, palette) : palette.muted,
       },
       {
-        content: `docker:${selectedDocker?.name ?? "-"} (${dockerState})`,
+        content: `external:${selectedDocker?.name ?? "-"} (${dockerState})`,
         fg: selectedDocker ? dockerStateColor(selectedDocker.state, palette) : palette.muted,
       },
       {
@@ -1726,7 +1732,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   const rebuildDockerList = () => {
     if (!dockerManager || !dockerList || !dockerPanelMeta) return;
 
-    const services = dockerManager.getServices();
+    const services = dockerManager.getProcesses();
     const selectedIdx = dockerManager.getSelectedIndex();
     dockerLines = syncRows(dockerList, dockerLines, services.length, "docker");
 
@@ -1900,7 +1906,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     }
 
     if (dockerPanel && dockerPanelTitle) {
-      dockerPanelTitle.content = "Docker";
+      dockerPanelTitle.content = "External";
       dockerPanelTitle.fg = panelTitleColor("docker");
       dockerPanel.backgroundColor = panelBackgroundColor("docker");
     }
