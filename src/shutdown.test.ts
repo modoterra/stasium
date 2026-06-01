@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createShutdownHandler } from "./shutdown";
+import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import type { ServiceManager } from "./service-manager";
 
 const handlers: Array<ReturnType<typeof createShutdownHandler>> = [];
@@ -63,5 +64,42 @@ describe("shutdown handler", () => {
     shutdown.install();
 
     expect(process.listenerCount("exit")).toBe(before);
+  });
+
+  test("reports External Runtime Session cleanup failures and completes shutdown", async () => {
+    const messages: string[] = [];
+    const calls: string[] = [];
+    const manager = {
+      stopAll: async () => {
+        calls.push("stop direct");
+      },
+      waitForExit: async () => true,
+      forceStopAll: async () => {
+        calls.push("force stop direct");
+      },
+      getConfigs: () => [],
+    } as unknown as ServiceManager;
+    const externalRuntimeManager = {
+      stopSessionStartedProcesses: async (logger?: (message: string) => void) => {
+        calls.push("stop external session");
+        logger?.('External Runtime cleanup warning for "docker:db": stop failed');
+      },
+    } as unknown as ExternalRuntimeVisibilityManager;
+    const shutdown = createShutdownHandler({
+      cwd: process.cwd(),
+      manager,
+      externalRuntimeManager,
+      getServicePids: () => [],
+      logger: (message) => messages.push(message),
+      onAfter: () => {
+        calls.push("after cleanup");
+      },
+    });
+    handlers.push(shutdown);
+
+    await shutdown.run();
+
+    expect(calls).toEqual(["stop direct", "stop external session", "after cleanup"]);
+    expect(messages).toEqual(['External Runtime cleanup warning for "docker:db": stop failed']);
   });
 });
