@@ -2,7 +2,7 @@ import {
   cleanupExistingPids,
   removePidFilesForServices,
   removeServicePidFiles,
-  syncPidFiles,
+  writePidFiles,
 } from "./pidfile";
 import type { ServicePid } from "./types";
 
@@ -23,17 +23,14 @@ export class ProcessClaimStore {
   }
 
   async claimDirectManagedProcess(claim: ServicePid): Promise<void> {
-    await syncPidFiles(this.cwd, [claim], {
-      logger: this.logger,
-      timeoutMs: this.timeoutMs,
-    });
+    await writePidFiles(this.cwd, [claim]);
   }
 
   async releaseDirectManagedProcess(claim: ServicePid): Promise<void> {
     await removeServicePidFiles(this.cwd, [claim]);
   }
 
-  async releaseDirectManagedProcessNames(names: string[]): Promise<void> {
+  async cleanupRemovedDirectManagedProcessClaims(names: string[]): Promise<void> {
     await removePidFilesForServices(this.cwd, names);
   }
 

@@ -24,7 +24,7 @@ export interface ManifestEditingResult {
 interface ManifestEditTransaction {
   nextConfigs: ServiceConfig[];
   apply: () => Promise<void>;
-  releaseClaimNames?: string[];
+  cleanupRemovedClaimNames?: string[];
 }
 
 export const addProcessDefinition = async (
@@ -56,7 +56,7 @@ export const replaceProcessDefinition = async (
     apply: async () => {
       await context.manager.updateServiceConfig(index, config);
     },
-    releaseClaimNames: previousName && previousName !== config.name ? [previousName] : [],
+    cleanupRemovedClaimNames: previousName && previousName !== config.name ? [previousName] : [],
   });
 };
 
@@ -73,7 +73,7 @@ export const removeSelectedProcessDefinition = async (
     apply: async () => {
       await context.manager.removeSelected();
     },
-    releaseClaimNames: removedName ? [removedName] : [],
+    cleanupRemovedClaimNames: removedName ? [removedName] : [],
   });
 };
 
@@ -119,13 +119,13 @@ const applyManifestEdit = async (
 
   const warnings: string[] = [];
 
-  if (transaction.releaseClaimNames && transaction.releaseClaimNames.length > 0) {
+  if (transaction.cleanupRemovedClaimNames && transaction.cleanupRemovedClaimNames.length > 0) {
     try {
-      await context.processClaimStore.releaseDirectManagedProcessNames(
-        transaction.releaseClaimNames,
+      await context.processClaimStore.cleanupRemovedDirectManagedProcessClaims(
+        transaction.cleanupRemovedClaimNames,
       );
     } catch (error) {
-      warnings.push(`Failed to release Process Claims: ${getErrorMessage(error)}`);
+      warnings.push(`Failed to clean up removed Process Claims: ${getErrorMessage(error)}`);
     }
   }
 
