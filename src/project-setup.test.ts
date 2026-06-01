@@ -32,7 +32,7 @@ describe("createProjectManifest", () => {
         label: "Node",
         priority: 10,
         defaultSelected: true,
-        service: normalizeProcessDefinition({ name: "web", command: "bun run dev" }),
+        service: normalizeProcessDefinition({ name: "web", launchInstruction: "bun run dev" }),
         dependsOnIds: [],
       };
       const selection = new DiscoverySelection([candidate]);

@@ -13,12 +13,16 @@ const processDefinition = (input: ProcessDefinitionInput): ServiceConfig =>
 describe("Startup Dependency planning", () => {
   test("computes Startup order and reverse Shutdown order", () => {
     const plan = planStartupDependencies([
-      processDefinition({ name: "api", command: ["bun", "run", "dev"], depends_on: ["db"] }),
-      processDefinition({ name: "db", command: ["bun", "run", "db"] }),
+      processDefinition({
+        name: "api",
+        launchInstruction: ["bun", "run", "dev"],
+        startupDependencies: ["db"],
+      }),
+      processDefinition({ name: "db", launchInstruction: ["bun", "run", "db"] }),
       processDefinition({
         name: "worker",
-        command: ["bun", "run", "worker"],
-        depends_on: ["api"],
+        launchInstruction: ["bun", "run", "worker"],
+        startupDependencies: ["api"],
       }),
     ]);
 
@@ -30,30 +34,42 @@ describe("Startup Dependency planning", () => {
   test("validates duplicate names, unknown dependencies, self-dependencies, and cycles", () => {
     expect(() =>
       planStartupDependencies([
-        processDefinition({ name: "api", command: ["bun", "run", "dev"] }),
-        processDefinition({ name: "api", command: ["bun", "run", "worker"] }),
+        processDefinition({ name: "api", launchInstruction: ["bun", "run", "dev"] }),
+        processDefinition({ name: "api", launchInstruction: ["bun", "run", "worker"] }),
       ]),
     ).toThrow(StartupDependencyPlanError);
 
     expect(() =>
       planStartupDependencies([
-        processDefinition({ name: "api", command: ["bun", "run", "dev"], depends_on: ["db"] }),
+        processDefinition({
+          name: "api",
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["db"],
+        }),
       ]),
     ).toThrow(StartupDependencyPlanError);
 
     expect(() =>
       planStartupDependencies([
-        processDefinition({ name: "api", command: ["bun", "run", "dev"], depends_on: ["api"] }),
+        processDefinition({
+          name: "api",
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["api"],
+        }),
       ]),
     ).toThrow(StartupDependencyPlanError);
 
     expect(() =>
       planStartupDependencies([
-        processDefinition({ name: "api", command: ["bun", "run", "dev"], depends_on: ["worker"] }),
+        processDefinition({
+          name: "api",
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["worker"],
+        }),
         processDefinition({
           name: "worker",
-          command: ["bun", "run", "worker"],
-          depends_on: ["api"],
+          launchInstruction: ["bun", "run", "worker"],
+          startupDependencies: ["api"],
         }),
       ]),
     ).toThrow(StartupDependencyPlanError);
@@ -61,17 +77,17 @@ describe("Startup Dependency planning", () => {
 
   test("represents blocked Process State when Startup Dependencies fail", () => {
     const plan = planStartupDependencies([
-      processDefinition({ name: "db", command: ["bun", "run", "db"] }),
-      processDefinition({ name: "cache", command: ["bun", "run", "cache"] }),
+      processDefinition({ name: "db", launchInstruction: ["bun", "run", "db"] }),
+      processDefinition({ name: "cache", launchInstruction: ["bun", "run", "cache"] }),
       processDefinition({
         name: "api",
-        command: ["bun", "run", "dev"],
-        depends_on: ["db", "cache"],
+        launchInstruction: ["bun", "run", "dev"],
+        startupDependencies: ["db", "cache"],
       }),
       processDefinition({
         name: "worker",
-        command: ["bun", "run", "worker"],
-        depends_on: ["api"],
+        launchInstruction: ["bun", "run", "worker"],
+        startupDependencies: ["api"],
       }),
     ]);
 

@@ -181,11 +181,11 @@ const buildCandidateService = (
 
   const input: ProcessDefinitionInput = {
     name: renderedName,
-    command: renderedCommand,
-    working_dir: renderedWorkingDir,
-    env: renderedEnv,
-    restart_policy: strategy.service.restart_policy,
-    depends_on: renderedDependsOn,
+    launchInstruction: renderedCommand,
+    workingDir: renderedWorkingDir,
+    environment: renderedEnv,
+    restartRule: strategy.service.restart_policy,
+    startupDependencies: renderedDependsOn,
   };
 
   try {

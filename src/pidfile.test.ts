@@ -74,7 +74,7 @@ describe("pidfile cleanup", () => {
     const manager = new ServiceManager([
       normalizeProcessDefinition({
         name: "api",
-        command: ["bun", "-e", "setInterval(() => {}, 1000)"],
+        launchInstruction: ["bun", "-e", "setInterval(() => {}, 1000)"],
       }),
     ]);
 
@@ -219,13 +219,13 @@ describe("pidfile cleanup", () => {
       [
         normalizeProcessDefinition({
           name: "app",
-          command: ["bun", "-e", "setInterval(() => {}, 1000)"],
-          working_dir: cwd,
+          launchInstruction: ["bun", "-e", "setInterval(() => {}, 1000)"],
+          workingDir: cwd,
         }),
         normalizeProcessDefinition({
           name: "frontend",
-          command: ["bun", "-e", "setInterval(() => {}, 1000)"],
-          working_dir: cwd,
+          launchInstruction: ["bun", "-e", "setInterval(() => {}, 1000)"],
+          workingDir: cwd,
         }),
       ],
       { processClaimStore: new ProcessClaimStore(cwd) },

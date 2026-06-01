@@ -4,11 +4,11 @@ import type { CommandSpec, LaunchInstruction, ProcessDefinition, RestartPolicy }
 
 export interface ProcessDefinitionInput {
   name: string;
-  command: CommandSpec;
-  working_dir?: string;
-  env?: Record<string, string>;
-  restart_policy?: RestartPolicy;
-  depends_on?: string[];
+  launchInstruction: CommandSpec;
+  workingDir?: string;
+  environment?: Record<string, string>;
+  restartRule?: RestartPolicy;
+  startupDependencies?: string[];
 }
 
 export interface NormalizeProcessDefinitionOptions {
@@ -64,18 +64,22 @@ export const normalizeProcessDefinition = (
   options: NormalizeProcessDefinitionOptions = {},
 ): ProcessDefinition => {
   try {
-    const command = normalizeCommand(input.command);
-    const restartPolicy = input.restart_policy ?? "never";
-    const startupDependencies = normalizeDependencies(input.depends_on);
+    const command = normalizeCommand(input.launchInstruction);
+    const workingDir = normalizeWorkingDir(input.workingDir, options.baseDir);
+    const environment = normalizeEnv(input.environment);
+    const restartPolicy = input.restartRule ?? "never";
+    const startupDependencies = normalizeDependencies(input.startupDependencies);
 
     return {
       name: normalizeName(input.name),
       command,
-      working_dir: normalizeWorkingDir(input.working_dir, options.baseDir),
-      env: normalizeEnv(input.env),
+      working_dir: workingDir,
+      env: environment,
       restart_policy: restartPolicy,
       depends_on: startupDependencies,
       launchInstruction: toLaunchInstruction(command),
+      workingDir,
+      environment,
       startupDependencies,
       restartRule: restartPolicy,
     };

@@ -7,19 +7,19 @@ describe("process definition normalization", () => {
     const definition = normalizeProcessDefinition(
       {
         name: " api ",
-        command: "bun run dev",
-        working_dir: "app",
-        env: { PORT: "3000" },
-        restart_policy: "on-failure",
-        depends_on: [" db "],
+        launchInstruction: "bun run dev",
+        workingDir: "app",
+        environment: { PORT: "3000" },
+        restartRule: "on-failure",
+        startupDependencies: [" db "],
       },
       { baseDir: "/workspace" },
     );
 
     expect(definition).toMatchObject({
       name: "api",
-      working_dir: resolve("/workspace", "app"),
-      env: { PORT: "3000" },
+      workingDir: resolve("/workspace", "app"),
+      environment: { PORT: "3000" },
       launchInstruction: { executable: "bun", arguments: ["run", "dev"] },
       startupDependencies: ["db"],
       restartRule: "on-failure",
@@ -27,10 +27,13 @@ describe("process definition normalization", () => {
   });
 
   test("preserves default Process Definition behavior", () => {
-    const definition = normalizeProcessDefinition({ name: "api", command: ["bun", "--version"] });
+    const definition = normalizeProcessDefinition({
+      name: "api",
+      launchInstruction: ["bun", "--version"],
+    });
 
     expect(definition).toMatchObject({
-      env: {},
+      environment: {},
       launchInstruction: { executable: "bun", arguments: ["--version"] },
       startupDependencies: [],
       restartRule: "never",
@@ -39,7 +42,11 @@ describe("process definition normalization", () => {
 
   test("rejects invalid Startup Dependencies", () => {
     expect(() =>
-      normalizeProcessDefinition({ name: "api", command: ["bun", "--version"], depends_on: [""] }),
+      normalizeProcessDefinition({
+        name: "api",
+        launchInstruction: ["bun", "--version"],
+        startupDependencies: [""],
+      }),
     ).toThrow(ProcessDefinitionError);
   });
 });

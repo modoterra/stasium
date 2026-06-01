@@ -15,17 +15,17 @@ const service = (input: ProcessDefinitionInput): ServiceConfig => normalizeProce
 const baseServices: ServiceConfig[] = [
   service({
     name: "api",
-    command: ["bun", "run", "dev"],
-    depends_on: ["db"],
+    launchInstruction: ["bun", "run", "dev"],
+    startupDependencies: ["db"],
   }),
   service({
     name: "db",
-    command: ["docker", "compose", "up", "db"],
+    launchInstruction: ["docker", "compose", "up", "db"],
   }),
   service({
     name: "worker",
-    command: ["bun", "run", "worker"],
-    depends_on: ["api"],
+    launchInstruction: ["bun", "run", "worker"],
+    startupDependencies: ["api"],
   }),
 ];
 
@@ -38,9 +38,13 @@ describe("service graph", () => {
     expect(getTopologicalServiceLayers(baseServices)).toEqual([["db"], ["api"], ["worker"]]);
     expect(
       getTopologicalServiceLayers([
-        service({ name: "db", command: ["bun", "--version"] }),
-        service({ name: "cache", command: ["bun", "--version"] }),
-        service({ name: "api", command: ["bun", "--version"], depends_on: ["db", "cache"] }),
+        service({ name: "db", launchInstruction: ["bun", "--version"] }),
+        service({ name: "cache", launchInstruction: ["bun", "--version"] }),
+        service({
+          name: "api",
+          launchInstruction: ["bun", "--version"],
+          startupDependencies: ["db", "cache"],
+        }),
       ]),
     ).toEqual([["db", "cache"], ["api"]]);
   });
@@ -65,8 +69,8 @@ describe("service graph", () => {
     const services: ServiceConfig[] = [
       service({
         name: "api",
-        command: ["bun", "run", "dev"],
-        depends_on: ["cache"],
+        launchInstruction: ["bun", "run", "dev"],
+        startupDependencies: ["cache"],
       }),
     ];
 
@@ -77,8 +81,8 @@ describe("service graph", () => {
     const services: ServiceConfig[] = [
       service({
         name: "api",
-        command: ["bun", "run", "dev"],
-        depends_on: ["cache"],
+        launchInstruction: ["bun", "run", "dev"],
+        startupDependencies: ["cache"],
       }),
     ];
 
@@ -93,8 +97,8 @@ describe("service graph", () => {
     const services: ServiceConfig[] = [
       service({
         name: "api",
-        command: ["bun", "run", "dev"],
-        depends_on: ["docker:db"],
+        launchInstruction: ["bun", "run", "dev"],
+        startupDependencies: ["docker:db"],
       }),
     ];
 
@@ -112,8 +116,8 @@ describe("service graph", () => {
     const services: ServiceConfig[] = [
       service({
         name: "api",
-        command: ["bun", "run", "dev"],
-        depends_on: ["docker:db"],
+        launchInstruction: ["bun", "run", "dev"],
+        startupDependencies: ["docker:db"],
       }),
     ];
 
@@ -131,13 +135,13 @@ describe("service graph", () => {
     const services: ServiceConfig[] = [
       service({
         name: "api",
-        command: ["bun", "run", "dev"],
-        depends_on: ["worker"],
+        launchInstruction: ["bun", "run", "dev"],
+        startupDependencies: ["worker"],
       }),
       service({
         name: "worker",
-        command: ["bun", "run", "worker"],
-        depends_on: ["api"],
+        launchInstruction: ["bun", "run", "worker"],
+        startupDependencies: ["api"],
       }),
     ];
 

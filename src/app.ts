@@ -266,7 +266,7 @@ const setupKeybindings = (
       try {
         await addProcessDefinition(
           { manifestPath, appConfig, manager, processClaimStore },
-          { name, command },
+          { name, launchInstruction: command },
         );
         controls.hideAddOverlay();
         focusManager.setMode("normal");

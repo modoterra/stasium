@@ -10,12 +10,16 @@ const processDefinition = (input: ProcessDefinitionInput): ServiceConfig =>
   normalizeProcessDefinition(input);
 
 const processDefinitions = (): ServiceConfig[] => [
-  processDefinition({ name: "db", command: ["bun", "run", "db"] }),
-  processDefinition({ name: "api", command: ["bun", "run", "dev"], depends_on: ["db"] }),
+  processDefinition({ name: "db", launchInstruction: ["bun", "run", "db"] }),
+  processDefinition({
+    name: "api",
+    launchInstruction: ["bun", "run", "dev"],
+    startupDependencies: ["db"],
+  }),
   processDefinition({
     name: "worker",
-    command: ["bun", "run", "worker"],
-    depends_on: ["api"],
+    launchInstruction: ["bun", "run", "worker"],
+    startupDependencies: ["api"],
   }),
 ];
 
@@ -46,7 +50,11 @@ describe("Direct Managed Process collection", () => {
 
     expect(() =>
       collection.validate([
-        processDefinition({ name: "api", command: ["bun", "run", "dev"], depends_on: ["db"] }),
+        processDefinition({
+          name: "api",
+          launchInstruction: ["bun", "run", "dev"],
+          startupDependencies: ["db"],
+        }),
       ]),
     ).toThrow();
   });
