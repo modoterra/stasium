@@ -7,15 +7,6 @@ import {
 } from "./external-runtime";
 import type { ExternalManagedProcess, LogEntry } from "./types";
 
-const process = (runtimeId: string, name: string): ExternalManagedProcess => ({
-  runtimeId,
-  runtimeName: runtimeId,
-  name,
-  state: "running",
-  status: "Up",
-  ports: "",
-});
-
 describe("detectExternalRuntimes", () => {
   test("asks each External Runtime Adapter whether it is available for the Project", async () => {
     const asked: string[] = [];
@@ -92,6 +83,60 @@ describe("ExternalRuntimeVisibilityManager", () => {
 
     expect(actions).toEqual(["podman:restart:cache"]);
   });
+
+  test("tracks and stops External Managed Processes auto-started for Startup Dependencies", async () => {
+    const actions: string[] = [];
+    let state: ExternalManagedProcess["state"] = "exited";
+    const testRuntime = runtime("docker", [process("docker", "db")], actions);
+    testRuntime.snapshot = async () => [process("docker", "db", state)];
+    testRuntime.start = async (name) => {
+      actions.push(`docker:start:${name}`);
+      state = "running";
+    };
+    const manager = new ExternalRuntimeVisibilityManager([testRuntime]);
+
+    await manager.ensureProcessAvailable("db");
+    await manager.stopSessionStartedProcesses();
+
+    expect(actions).toEqual(["docker:start:db", "docker:stop:db"]);
+  });
+
+  test("does not stop manually started External Managed Processes during session cleanup", async () => {
+    const actions: string[] = [];
+    let state: ExternalManagedProcess["state"] = "exited";
+    const testRuntime = runtime("docker", [process("docker", "db")], actions);
+    testRuntime.snapshot = async () => [process("docker", "db", state)];
+    testRuntime.start = async (name) => {
+      actions.push(`docker:start:${name}`);
+      state = "running";
+    };
+    const manager = new ExternalRuntimeVisibilityManager([testRuntime]);
+
+    await manager.refresh();
+    await manager.start("db");
+    await manager.stopSessionStartedProcesses();
+
+    expect(actions).toEqual(["docker:start:db"]);
+  });
+
+  test("reports failed External Runtime Session stop requests without throwing", async () => {
+    const messages: string[] = [];
+    let state: ExternalManagedProcess["state"] = "exited";
+    const testRuntime = runtime("docker", [process("docker", "db")]);
+    testRuntime.snapshot = async () => [process("docker", "db", state)];
+    testRuntime.start = async () => {
+      state = "running";
+    };
+    testRuntime.stop = async () => {
+      throw new Error("stop failed");
+    };
+    const manager = new ExternalRuntimeVisibilityManager([testRuntime]);
+
+    await manager.ensureProcessAvailable("db");
+    await manager.stopSessionStartedProcesses((message) => messages.push(message));
+
+    expect(messages).toEqual(['External Runtime cleanup warning for "docker:db": stop failed']);
+  });
 });
 
 const runtime = (
@@ -114,4 +159,17 @@ const runtime = (
   },
   streamOutput: (_name: string, _onOutput: (entry: LogEntry) => void) => null,
   destroy: async () => {},
+});
+
+const process = (
+  runtimeId: string,
+  name: string,
+  state: ExternalManagedProcess["state"] = "running",
+): ExternalManagedProcess => ({
+  runtimeId,
+  runtimeName: runtimeId,
+  name,
+  state,
+  status: "Up",
+  ports: "",
 });

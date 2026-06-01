@@ -1,3 +1,4 @@
+import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { removePidFilesForServices, removeServicePidFiles } from "./pidfile";
 import type { ServiceManager } from "./service-manager";
 import type { ServicePid } from "./types";
@@ -16,6 +17,7 @@ const SHUTDOWN_SIGNALS: NodeJS.Signals[] = [
 export type ShutdownContext = {
   cwd: string;
   manager: ServiceManager;
+  externalRuntimeManager?: ExternalRuntimeVisibilityManager | null;
   getServicePids: () => ServicePid[];
   onAfter?: () => Promise<void> | void;
   logger?: (message: string) => void;
@@ -24,6 +26,7 @@ export type ShutdownContext = {
 export const createShutdownHandler = ({
   cwd,
   manager,
+  externalRuntimeManager,
   getServicePids,
   onAfter,
   logger,
@@ -44,6 +47,7 @@ export const createShutdownHandler = ({
         await manager.forceStopAll();
         await manager.waitForExit(EXIT_WAIT_MS);
       }
+      await externalRuntimeManager?.stopSessionStartedProcesses(logger);
       await removeServicePidFiles(cwd, activeServicePids);
       await removePidFilesForServices(
         cwd,
