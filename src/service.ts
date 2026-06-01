@@ -5,7 +5,7 @@ import {
 } from "./launch-execution";
 import { resolveRuntimeWorkingDir } from "./process-info";
 import { ProcessClaimStore } from "./process-claim";
-import type { LogEntry, ServiceConfig, ServicePid, ServiceState } from "./types";
+import type { LogEntry, ProcessDefinition, ServicePid, ServiceState } from "./types";
 
 export type ServiceEvent =
   | { type: "state"; state: ServiceState }
@@ -18,7 +18,7 @@ type ServiceSubscriber = (event: ServiceEvent) => void;
 const SHOULD_DETACH_PROCESS_GROUP = process.platform !== "win32";
 
 export class ServiceProcess {
-  readonly config: ServiceConfig;
+  readonly config: ProcessDefinition;
   private readonly detached = SHOULD_DETACH_PROCESS_GROUP;
   private readonly workingDir: string;
   private readonly launchAdapter: LaunchInstructionExecutionAdapter;
@@ -35,12 +35,12 @@ export class ServiceProcess {
   private activeClaim: ServicePid | null = null;
 
   constructor(
-    config: ServiceConfig,
+    config: ProcessDefinition,
     launchAdapter = new LaunchInstructionExecutionAdapter(),
     processClaimStore: ProcessClaimStore | null = null,
   ) {
     this.config = config;
-    this.workingDir = resolveRuntimeWorkingDir(config.working_dir);
+    this.workingDir = resolveRuntimeWorkingDir(config.workingDir);
     this.launchAdapter = launchAdapter;
     this.processClaimStore = processClaimStore;
   }
@@ -92,13 +92,16 @@ export class ServiceProcess {
     this.activeClaim = null;
     this.setState("STARTING");
 
-    const argv = this.config.command;
+    const argv = [
+      this.config.launchInstruction.executable,
+      ...this.config.launchInstruction.arguments,
+    ];
     this.command = [...argv];
     const launchHandle = await this.launchAdapter.start(
       {
         argv,
         workingDir: this.workingDir,
-        env: this.config.env,
+        env: this.config.environment,
         detached: this.detached,
       },
       (event) => this.handleLaunchEvent(event),

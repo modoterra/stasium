@@ -1,11 +1,11 @@
 import { ServiceGraphError, validateServiceGraph } from "../service-graph";
-import type { ServiceConfig } from "../types";
+import type { ProcessDefinition } from "../types";
 import type { DetectedCandidate, FinalizeSelectionResult, SelectionItem } from "./types";
 
 export type DiscoverySelectionUpdateCallback = () => void;
 
 interface FinalizeSelectionOptions {
-  existingServices?: ServiceConfig[];
+  existingServices?: ProcessDefinition[];
   usedNames?: Iterable<string>;
 }
 
@@ -16,7 +16,7 @@ export class CandidateSelectionError extends Error {
   }
 }
 
-const cloneService = (service: ServiceConfig): ServiceConfig => {
+const cloneService = (service: ProcessDefinition): ProcessDefinition => {
   return {
     name: service.name,
     command: [...service.command],
@@ -24,6 +24,11 @@ const cloneService = (service: ServiceConfig): ServiceConfig => {
     env: { ...service.env },
     restart_policy: service.restart_policy,
     depends_on: [...service.depends_on],
+    launchInstruction: { ...service.launchInstruction },
+    workingDir: service.workingDir,
+    environment: { ...service.environment },
+    restartRule: service.restartRule,
+    startupDependencies: [...service.startupDependencies],
   };
 };
 
@@ -126,7 +131,7 @@ export const finalizeSelectedCandidates = (
   options: FinalizeSelectionOptions = {},
 ): FinalizeSelectionResult => {
   const warnings: string[] = [];
-  const services: ServiceConfig[] = [];
+  const services: ProcessDefinition[] = [];
   const finalNameByStrategy = new Map<string, string>();
   const usedNames = new Set(options.usedNames ?? []);
 
@@ -148,7 +153,7 @@ export const finalizeSelectedCandidates = (
     const service = services[index];
     if (!service) return;
 
-    const resolved = [...service.depends_on];
+    const resolved = [...service.startupDependencies];
     const seen = new Set(resolved);
 
     for (const dependencyId of candidate.dependsOnIds) {
@@ -170,6 +175,7 @@ export const finalizeSelectedCandidates = (
     }
 
     service.depends_on = resolved;
+    service.startupDependencies = resolved;
   });
 
   try {

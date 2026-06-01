@@ -4,7 +4,7 @@ import {
   getTopologicalServiceOrder,
   validateServiceGraph,
 } from "./service-graph";
-import type { ServiceConfig } from "./types";
+import type { ProcessDefinition } from "./types";
 
 export type BlockedProcessState = {
   name: string;
@@ -14,7 +14,7 @@ export type BlockedProcessState = {
 };
 
 export interface StartupDependencyPlan {
-  processDefinitions: ServiceConfig[];
+  processDefinitions: ProcessDefinition[];
   startupOrder: string[];
   startupLayers: string[][];
   shutdownOrder: string[];
@@ -39,7 +39,7 @@ const toPlanningError = (error: unknown): never => {
   throw error;
 };
 
-const cloneProcessDefinitions = (processDefinitions: ServiceConfig[]): ServiceConfig[] =>
+const cloneProcessDefinitions = (processDefinitions: ProcessDefinition[]): ProcessDefinition[] =>
   processDefinitions.map((processDefinition) => ({
     name: processDefinition.name,
     command: [...processDefinition.command],
@@ -47,10 +47,15 @@ const cloneProcessDefinitions = (processDefinitions: ServiceConfig[]): ServiceCo
     env: { ...processDefinition.env },
     restart_policy: processDefinition.restart_policy,
     depends_on: [...processDefinition.depends_on],
+    launchInstruction: { ...processDefinition.launchInstruction },
+    workingDir: processDefinition.workingDir,
+    environment: { ...processDefinition.environment },
+    startupDependencies: [...processDefinition.startupDependencies],
+    restartRule: processDefinition.restartRule,
   }));
 
 export const planStartupDependencies = (
-  processDefinitions: ServiceConfig[],
+  processDefinitions: ProcessDefinition[],
   options: StartupDependencyPlanOptions = {},
 ): StartupDependencyPlan => {
   const cloned = cloneProcessDefinitions(processDefinitions);
@@ -88,7 +93,7 @@ export const getBlockedProcessStates = (
     const processDefinition = byName.get(name);
     if (!processDefinition) continue;
 
-    const blockedBy = processDefinition.depends_on.filter((dependency) =>
+    const blockedBy = processDefinition.startupDependencies.filter((dependency) =>
       unavailable.has(dependency),
     );
     if (blockedBy.length === 0) continue;

@@ -1,7 +1,7 @@
-import type { ServiceConfig } from "./types";
+import type { ProcessDefinition } from "./types";
 
 export interface RestartRuleLifecycleView {
-  config: ServiceConfig;
+  config: ProcessDefinition;
   restartCount: number;
   restartInMs: number | null;
 }
@@ -82,8 +82,8 @@ export class DirectManagedProcessLifecycle {
       return;
     }
 
-    if (view.config.restart_policy === "never") return;
-    if (view.config.restart_policy === "on-failure" && exitCode === 0) return;
+    if (view.config.restartRule === "never") return;
+    if (view.config.restartRule === "on-failure" && exitCode === 0) return;
 
     const attempt = this.restartAttempts + 1;
     this.restartAttempts = attempt;

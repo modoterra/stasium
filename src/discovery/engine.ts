@@ -1,5 +1,5 @@
 import { normalizeProcessDefinition, type ProcessDefinitionInput } from "../process-definition";
-import type { CommandSpec, ServiceConfig } from "../types";
+import type { CommandSpec, ProcessDefinition } from "../types";
 import { resolveStrategyCaptures } from "./captures";
 import { DiscoveryProbeContext } from "./probes";
 import type { DetectResult, DetectedCandidate, DiscoveryStrategy, StrategyWhen } from "./types";
@@ -88,7 +88,7 @@ const matchesWhen = async (when: StrategyWhen, ctx: DiscoveryProbeContext): Prom
 };
 
 type ServiceBuildResult = {
-  service: ServiceConfig | null;
+  service: ProcessDefinition | null;
   dependsOnIds: string[];
   error: string | null;
 };
@@ -205,7 +205,7 @@ const buildCandidateService = (
 
 const toCandidate = (
   strategy: DiscoveryStrategy,
-  service: ServiceConfig,
+  service: ProcessDefinition,
   dependsOnIds: string[],
 ): DetectedCandidate => {
   return {
