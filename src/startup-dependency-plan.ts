@@ -18,6 +18,7 @@ export interface StartupDependencyPlan {
   startupOrder: string[];
   startupLayers: string[][];
   shutdownOrder: string[];
+  blockedStatesFor: (unavailableNames: Iterable<string>) => BlockedProcessState[];
 }
 
 export interface StartupDependencyPlanOptions {
@@ -57,12 +58,14 @@ export const planStartupDependencies = (
   try {
     validateServiceGraph(cloned, options);
     const startupOrder = getTopologicalServiceOrder(cloned, options);
-    return {
+    const plan: StartupDependencyPlan = {
       processDefinitions: cloned,
       startupOrder,
       startupLayers: getTopologicalServiceLayers(cloned, options),
       shutdownOrder: [...startupOrder].reverse(),
+      blockedStatesFor: (unavailableNames) => getBlockedProcessStates(plan, unavailableNames),
     };
+    return plan;
   } catch (error) {
     toPlanningError(error);
   }

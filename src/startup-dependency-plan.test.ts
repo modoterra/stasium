@@ -89,5 +89,6 @@ describe("Startup Dependency planning", () => {
         reason: 'Startup Dependency "api" failed to become available.',
       },
     ]);
+    expect(plan.blockedStatesFor(["db"])).toEqual(getBlockedProcessStates(plan, ["db"]));
   });
 });
