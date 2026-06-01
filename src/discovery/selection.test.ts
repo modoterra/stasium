@@ -47,7 +47,7 @@ describe("discovery selection", () => {
 
     expect(finalized.services[0]?.name).toBe("app");
     expect(finalized.services[1]?.name).toBe("app-2");
-    expect(finalized.services[1]?.depends_on).toEqual(["app"]);
+    expect(finalized.services[1]?.startupDependencies).toEqual(["app"]);
     expect(finalized.warnings).toContain("Candidate 'worker' was renamed from 'app' to 'app-2'.");
   });
 
@@ -90,7 +90,7 @@ describe("discovery selection", () => {
       makeCandidate("worker", "worker", true, ["app"]),
     ]);
 
-    expect(finalized.services[0]?.depends_on).toEqual([]);
+    expect(finalized.services[0]?.startupDependencies).toEqual([]);
     expect(finalized.warnings).toEqual([]);
   });
 
@@ -132,6 +132,6 @@ describe("discovery selection", () => {
       },
     );
 
-    expect(finalized.services[0]?.depends_on).toEqual(["db"]);
+    expect(finalized.services[0]?.startupDependencies).toEqual(["db"]);
   });
 });

@@ -66,11 +66,14 @@ describe("discovery engine", () => {
       const detected = await detectDiscoveryCandidates(dir, [strategy]);
       expect(detected.warnings).toHaveLength(0);
       expect(detected.candidates).toHaveLength(1);
-      expect(detected.candidates[0]?.service.command).toEqual(["bun", "run", "vite"]);
-      expect(detected.candidates[0]?.service.working_dir).toBe(resolve(dir));
-      expect(detected.candidates[0]?.service.env).toEqual({});
-      expect(detected.candidates[0]?.service.restart_policy).toBe("never");
-      expect(detected.candidates[0]?.service.depends_on).toEqual([]);
+      expect(detected.candidates[0]?.service.launchInstruction).toEqual({
+        executable: "bun",
+        arguments: ["run", "vite"],
+      });
+      expect(detected.candidates[0]?.service.workingDir).toBe(resolve(dir));
+      expect(detected.candidates[0]?.service.environment).toEqual({});
+      expect(detected.candidates[0]?.service.restartRule).toBe("never");
+      expect(detected.candidates[0]?.service.startupDependencies).toEqual([]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -250,22 +253,22 @@ app = FastAPI()
 
       expect(byId.has("laravel-queue")).toBe(true);
       expect(byId.has("laravel-horizon")).toBe(true);
-      expect(byId.get("laravel-horizon")?.service.command).toEqual(["php", "artisan", "horizon"]);
-      expect(byId.get("laravel-reverb")?.service.command).toEqual([
-        "php",
-        "artisan",
-        "reverb:start",
-      ]);
-      expect(byId.get("laravel-octane")?.service.command).toEqual([
-        "php",
-        "artisan",
-        "octane:start",
-      ]);
-      expect(byId.get("laravel-pulse-check")?.service.command).toEqual([
-        "php",
-        "artisan",
-        "pulse:check",
-      ]);
+      expect(byId.get("laravel-horizon")?.service.launchInstruction).toEqual({
+        executable: "php",
+        arguments: ["artisan", "horizon"],
+      });
+      expect(byId.get("laravel-reverb")?.service.launchInstruction).toEqual({
+        executable: "php",
+        arguments: ["artisan", "reverb:start"],
+      });
+      expect(byId.get("laravel-octane")?.service.launchInstruction).toEqual({
+        executable: "php",
+        arguments: ["artisan", "octane:start"],
+      });
+      expect(byId.get("laravel-pulse-check")?.service.launchInstruction).toEqual({
+        executable: "php",
+        arguments: ["artisan", "pulse:check"],
+      });
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
