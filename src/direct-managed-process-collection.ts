@@ -6,7 +6,16 @@ export interface DirectManagedProcessCollectionLifecycleOptions {
   allowExternalDependencies?: boolean;
 }
 
-export class DirectManagedProcessCollectionLifecycle {
+export interface DirectManagedProcessCollection {
+  validate(configs: ServiceConfig[]): void;
+  startupLayers(): string[][];
+  startupOrder(): string[];
+  shutdownOrder(): string[];
+  startOrderFor(name: string): string[];
+  stopOrderFor(name: string): string[];
+}
+
+export class DirectManagedProcessCollectionLifecycle implements DirectManagedProcessCollection {
   private readonly getConfigs: () => ServiceConfig[];
   private readonly options: DirectManagedProcessCollectionLifecycleOptions;
 
