@@ -1,13 +1,7 @@
 import { LogBuffer } from "./log-buffer";
 import { type ServiceEvent, ServiceProcess } from "./service";
-import {
-  ServiceGraphError,
-  getDependencyClosure,
-  getDependentsClosure,
-  getTopologicalServiceLayers,
-  getTopologicalServiceOrder,
-  validateServiceGraph,
-} from "./service-graph";
+import { ServiceGraphError, getDependencyClosure, getDependentsClosure } from "./service-graph";
+import { StartupDependencyPlanError, planStartupDependencies } from "./startup-dependency-plan";
 import type { ServiceConfig, ServicePid, ServiceState } from "./types";
 
 export interface ServiceView {
@@ -135,22 +129,16 @@ export class ServiceManager {
   }
 
   async stopAll(): Promise<void> {
-    await this.forEachResolvedService(
-      this.getTopologicalOrderNames().reverse(),
-      async (service) => {
-        await this.stopService(service);
-      },
-    );
+    await this.forEachResolvedService(this.getShutdownOrderNames(), async (service) => {
+      await this.stopService(service);
+    });
   }
 
   async forceStopAll(): Promise<void> {
-    await this.forEachResolvedService(
-      this.getTopologicalOrderNames().reverse(),
-      async (service) => {
-        this.suppressAutoRestart(service);
-        await service.forceStop("SIGKILL");
-      },
-    );
+    await this.forEachResolvedService(this.getShutdownOrderNames(), async (service) => {
+      this.suppressAutoRestart(service);
+      await service.forceStop("SIGKILL");
+    });
   }
 
   async startSelected(): Promise<void> {
@@ -366,7 +354,7 @@ export class ServiceManager {
     try {
       return operation();
     } catch (error) {
-      if (error instanceof ServiceGraphError) {
+      if (error instanceof ServiceGraphError || error instanceof StartupDependencyPlanError) {
         throw new ServiceManagerError(error.message);
       }
       throw error;
@@ -375,16 +363,20 @@ export class ServiceManager {
 
   private assertValidConfigGraph(configs: ServiceConfig[]): void {
     this.runGraphOperation(() => {
-      validateServiceGraph(configs);
+      planStartupDependencies(configs);
     });
   }
 
   private getTopologicalOrderNames(): string[] {
-    return this.runGraphOperation(() => getTopologicalServiceOrder(this.getConfigs()));
+    return this.runGraphOperation(() => planStartupDependencies(this.getConfigs()).startupOrder);
+  }
+
+  private getShutdownOrderNames(): string[] {
+    return this.runGraphOperation(() => planStartupDependencies(this.getConfigs()).shutdownOrder);
   }
 
   private getTopologicalLayers(): string[][] {
-    return this.runGraphOperation(() => getTopologicalServiceLayers(this.getConfigs()));
+    return this.runGraphOperation(() => planStartupDependencies(this.getConfigs()).startupLayers);
   }
 
   private getStartOrderForService(name: string): string[] {
