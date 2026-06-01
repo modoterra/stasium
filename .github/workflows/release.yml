@@ -44,6 +44,12 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Set release version
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          printf 'export const STASIUM_VERSION = "%s";\n' "$version" > src/version.ts
+
       - name: Build binary
         run: bun run build
 
