@@ -58,4 +58,14 @@ describe("Direct Managed Process collection", () => {
       ]),
     ).toThrow();
   });
+
+  test("does not expose Workspace selection semantics", () => {
+    const collection: DirectManagedProcessCollection = new DirectManagedProcessCollectionLifecycle(
+      processDefinitions,
+    );
+
+    expect("getSelectedIndex" in collection).toBe(false);
+    expect("setSelectedIndex" in collection).toBe(false);
+    expect("moveSelection" in collection).toBe(false);
+  });
 });

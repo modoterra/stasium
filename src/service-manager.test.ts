@@ -101,6 +101,18 @@ describe("ServiceManager", () => {
     );
   });
 
+  test("keeps Workspace row selection outside Direct Managed Process collection mutations", async () => {
+    const manager = new ServiceManager([makeConfig("api"), makeConfig("worker")], {
+      launchAdapter: launchLongRunningPid(13),
+    });
+    manager.setSelectedIndex(1);
+
+    await manager.updateProcessDefinition(0, makeConfig("web"));
+
+    expect(manager.getSelectedIndex()).toBe(1);
+    expect(manager.getSelectedConfig()?.name).toBe("worker");
+  });
+
   test("starts dependencies before selected service", async () => {
     const manager = new ServiceManager([
       service({
