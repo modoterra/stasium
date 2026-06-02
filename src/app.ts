@@ -5,6 +5,7 @@ import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { FocusManager } from "./focus";
 import { DiscoverySelection, detectServices, formatServiceSummary } from "./init";
 import { runInitYesCommand } from "./init-command";
+import { runStartCommand, runStatusCommand } from "./lifecycle-command";
 import {
   addProcessDefinition,
   addSelectedDiscoveryCandidates,
@@ -998,6 +999,16 @@ export const run = async () => {
         usage: "stasium config <get|set> <key> [value]",
         description: "Read or write supported Stasium preferences.",
         handler: runConfigCommand,
+      },
+      start: {
+        usage: "stasium start [managed-process-name]",
+        description: "Start Direct Managed Processes without opening the Workspace.",
+        handler: runStartCommand,
+      },
+      status: {
+        usage: "stasium status",
+        description: "Print known Managed Process state.",
+        handler: runStatusCommand,
       },
     },
   });
