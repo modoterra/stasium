@@ -1,4 +1,6 @@
 import { join } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import type { UpdateChannelName } from "./update-channel";
 
 export interface UpdatePreferences {
@@ -25,4 +27,12 @@ export const loadUpdatePreferences = async (
     enabled: parsed.enabled ?? defaultUpdatePreferences.enabled,
     channel: parsed.channel ?? defaultUpdatePreferences.channel,
   };
+};
+
+export const saveUpdatePreferences = async (
+  preferences: UpdatePreferences,
+  path = defaultUpdatePreferencesPath(),
+): Promise<void> => {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(preferences, null, 2)}\n`);
 };
