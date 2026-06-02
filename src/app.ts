@@ -941,14 +941,27 @@ const runInteractiveApp = async (args: string[]): Promise<void> => {
 export const run = async () => {
   const result = await runCommand({
     argv: process.argv.slice(2),
+    version: STASIUM_VERSION,
     root: async (args) => {
       await runInteractiveApp(args);
       return { exitCode: typeof process.exitCode === "number" ? process.exitCode : 0 };
     },
     commands: {
-      init: async (args) => {
-        await runInteractiveApp(["init", ...args]);
-        return { exitCode: typeof process.exitCode === "number" ? process.exitCode : 0 };
+      init: {
+        usage: "stasium init",
+        description: "Start explicit Project Setup for this Project.",
+        handler: async (args) => {
+          await runInteractiveApp(["init", ...args]);
+          return { exitCode: typeof process.exitCode === "number" ? process.exitCode : 0 };
+        },
+      },
+      version: {
+        usage: "stasium version",
+        description: "Print the installed Stasium version.",
+        handler: async (_args, context) => {
+          context.stdout(STASIUM_VERSION);
+          return { exitCode: 0 };
+        },
       },
     },
   });
