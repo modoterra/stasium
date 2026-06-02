@@ -14,6 +14,7 @@ import type { FocusManager } from "./focus";
 import type { ServiceManager, ServiceView } from "./service-manager";
 import { formatCommandSpec } from "./shared";
 import type { ExternalManagedProcess, LogEntry, Manifest, PanelId, Shortcut } from "./types";
+import { STASIUM_VERSION } from "./version";
 
 interface Palette {
   active: string;
@@ -82,7 +83,7 @@ const light: Palette = {
 };
 
 const getTheme = (mode: "dark" | "light" | null): Palette => (mode === "light" ? light : dark);
-const VERSION_LABEL = "Stasium v0.2.3 (32423)";
+const VERSION_LABEL = `Stasium v${STASIUM_VERSION}`;
 const APP_INSET_X = 2;
 const APP_INSET_Y = 1;
 const PANEL_GAP_X = 2;
