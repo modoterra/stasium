@@ -941,10 +941,15 @@ const runInteractiveApp = async (args: string[]): Promise<void> => {
 export const run = async () => {
   const result = await runCommand({
     argv: process.argv.slice(2),
-    legacyRootCommands: ["init"],
     root: async (args) => {
       await runInteractiveApp(args);
       return { exitCode: typeof process.exitCode === "number" ? process.exitCode : 0 };
+    },
+    commands: {
+      init: async (args) => {
+        await runInteractiveApp(["init", ...args]);
+        return { exitCode: typeof process.exitCode === "number" ? process.exitCode : 0 };
+      },
     },
   });
 

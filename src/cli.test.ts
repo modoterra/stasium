@@ -41,12 +41,33 @@ describe("Command Runner", () => {
     expect(contexts).toHaveLength(1);
   });
 
-  test("passes legacy root commands to the root handler", async () => {
+  test("dispatches registered commands instead of the root handler", async () => {
     const calls: string[][] = [];
 
     const result = await runCommand({
       argv: ["init"],
-      legacyRootCommands: ["init"],
+      root: async (args) => {
+        calls.push(args);
+        return { exitCode: 1 };
+      },
+      commands: {
+        init: async (args) => {
+          calls.push(["init", ...args]);
+          return { exitCode: 0 };
+        },
+      },
+    });
+
+    expect(result).toEqual({ exitCode: 0 });
+    expect(calls).toEqual([["init"]]);
+  });
+
+  test("can temporarily pass legacy root commands to the root handler", async () => {
+    const calls: string[][] = [];
+
+    const result = await runCommand({
+      argv: ["legacy"],
+      legacyRootCommands: ["legacy"],
       root: async (args) => {
         calls.push(args);
         return { exitCode: 0 };
@@ -54,7 +75,7 @@ describe("Command Runner", () => {
     });
 
     expect(result).toEqual({ exitCode: 0 });
-    expect(calls).toEqual([["init"]]);
+    expect(calls).toEqual([["legacy"]]);
   });
 
   test("returns a command failure for unknown commands", async () => {
