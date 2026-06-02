@@ -17,6 +17,7 @@ import { fileExists, getErrorMessage } from "./shared";
 import { currentUpdatePlatform, runStartupUpdateCheck } from "./startup-update";
 import type { AppConfig, Manifest, Shortcut } from "./types";
 import { type UiControls, buildInitUi, buildUi } from "./ui";
+import { runUpdateCommand } from "./update-command";
 import { STASIUM_VERSION } from "./version";
 import { startWorkspace, type ShutdownController } from "./workspace-startup";
 import { runCommand } from "./cli";
@@ -962,6 +963,15 @@ export const run = async () => {
           context.stdout(STASIUM_VERSION);
           return { exitCode: 0 };
         },
+      },
+      update: {
+        usage: "stasium update [--check] [--channel <channel>]",
+        description: "Check for and install a Stasium update.",
+        handler: (args, context) =>
+          runUpdateCommand(args, context, {
+            currentVersion: STASIUM_VERSION,
+            executablePath: process.argv[0] ?? process.execPath,
+          }),
       },
     },
   });
