@@ -3,6 +3,7 @@ import { type KeyEvent, createCliRenderer } from "@opentui/core";
 import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { FocusManager } from "./focus";
 import { DiscoverySelection, detectServices, formatServiceSummary } from "./init";
+import { runInitYesCommand } from "./init-command";
 import {
   addProcessDefinition,
   addSelectedDiscoveryCandidates,
@@ -950,9 +951,12 @@ export const run = async () => {
     },
     commands: {
       init: {
-        usage: "stasium init",
+        usage: "stasium init [--yes]",
         description: "Start explicit Project Setup for this Project.",
         handler: async (args) => {
+          if (args[0] === "--yes") {
+            return runInitYesCommand({ stdout: console.log, stderr: console.error });
+          }
           await runInteractiveApp(["init", ...args]);
           return { exitCode: typeof process.exitCode === "number" ? process.exitCode : 0 };
         },
