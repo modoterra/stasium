@@ -6,6 +6,7 @@ import {
 import { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { LogBuffer } from "./log-buffer";
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
+import { ProcessOutputStore } from "./process-output-store";
 import { ProcessClaimStore } from "./process-claim";
 import { type ServiceEvent, ServiceProcess } from "./service";
 import { ServiceGraphError } from "./service-graph";
@@ -28,6 +29,7 @@ export type UpdateCallback = () => void;
 export interface ServiceManagerOptions {
   launchAdapter?: LaunchInstructionExecutionAdapter;
   processClaimStore?: ProcessClaimStore | null;
+  processOutputStore?: ProcessOutputStore | null;
   externalRuntimeManager?: ExternalRuntimeVisibilityManager | null;
 }
 
@@ -49,6 +51,7 @@ export class ServiceManager {
   private readonly collectionLifecycle: DirectManagedProcessCollectionLifecycle;
   private readonly launchAdapter: LaunchInstructionExecutionAdapter;
   private readonly processClaimStore: ProcessClaimStore | null;
+  private readonly processOutputStore: ProcessOutputStore | null;
   private readonly externalRuntimeManager: ExternalRuntimeVisibilityManager | null;
   private restartTicker: ReturnType<typeof setInterval> | null = null;
   private readonly updateCallbacks: Set<UpdateCallback> = new Set();
@@ -58,6 +61,7 @@ export class ServiceManager {
   constructor(configs: ProcessDefinition[], options: ServiceManagerOptions = {}) {
     this.launchAdapter = options.launchAdapter ?? new LaunchInstructionExecutionAdapter();
     this.processClaimStore = options.processClaimStore ?? null;
+    this.processOutputStore = options.processOutputStore ?? null;
     this.externalRuntimeManager = options.externalRuntimeManager ?? null;
     this.collectionLifecycle = new DirectManagedProcessCollectionLifecycle(
       () => this.getConfigs(),
@@ -342,6 +346,7 @@ export class ServiceManager {
       this.notifyProcessChange();
     } else if (event.type === "log") {
       view.log.add(event.entry);
+      void this.processOutputStore?.append(view.name, event.entry);
     } else if (event.type === "exit") {
       const lifecycle = this.getLifecycle(service);
       lifecycle?.noteExit(view, event.code);

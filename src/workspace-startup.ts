@@ -5,6 +5,7 @@ import {
   type ExternalRuntimeAdapter,
 } from "./external-runtime";
 import { loadManifest } from "./manifest";
+import { ProcessOutputStore } from "./process-output-store";
 import { ProcessClaimStore } from "./process-claim";
 import { ServiceManager } from "./service-manager";
 import { createShutdownHandler } from "./shutdown";
@@ -52,6 +53,7 @@ export const startWorkspace = async (
   const appConfig = manifest.app;
   const logger = options.logger;
   const processClaimStore = new ProcessClaimStore(options.cwd, { logger });
+  const processOutputStore = new ProcessOutputStore(options.cwd);
   const externalRuntimeAdapters = options.externalRuntimeAdapters ?? [
     createDockerComposeExternalRuntimeAdapter(),
   ];
@@ -64,6 +66,7 @@ export const startWorkspace = async (
     externalRuntimes.length > 0 ? new ExternalRuntimeVisibilityManager(externalRuntimes) : null;
   const manager = new ServiceManager(manifest.services, {
     processClaimStore,
+    processOutputStore,
     externalRuntimeManager,
   });
   const shutdown = createShutdownHandler({
