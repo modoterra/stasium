@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { runStartCommand, runStatusCommand, type LifecycleOperations } from "./lifecycle-command";
+import {
+  runRestartCommand,
+  runStartCommand,
+  runStatusCommand,
+  runStopCommand,
+  type LifecycleOperations,
+} from "./lifecycle-command";
 import type { CommandContext } from "./cli";
 
 const context = (): { context: CommandContext; stdout: string[]; stderr: string[] } => {
@@ -24,6 +30,8 @@ describe("Lifecycle Commands", () => {
         calls.push(name);
         return ["web", "worker"];
       },
+      stop: async () => [],
+      restart: async () => [],
       status: async () => [],
     };
 
@@ -42,6 +50,8 @@ describe("Lifecycle Commands", () => {
         calls.push(name);
         return ["web"];
       },
+      stop: async () => [],
+      restart: async () => [],
       status: async () => [],
     };
 
@@ -58,6 +68,8 @@ describe("Lifecycle Commands", () => {
       start: async () => {
         throw new Error("Unknown Managed Process: missing");
       },
+      stop: async () => [],
+      restart: async () => [],
       status: async () => [],
     };
 
@@ -71,6 +83,8 @@ describe("Lifecycle Commands", () => {
     const io = context();
     const operations: LifecycleOperations = {
       start: async () => [],
+      stop: async () => [],
+      restart: async () => [],
       status: async () => [
         { name: "web", state: "RUNNING" },
         { name: "worker", state: "STOPPED" },
@@ -81,5 +95,45 @@ describe("Lifecycle Commands", () => {
 
     expect(result).toEqual({ exitCode: 0 });
     expect(io.stdout).toEqual(["web: RUNNING", "worker: STOPPED"]);
+  });
+
+  test("stops Direct Managed Processes", async () => {
+    const io = context();
+    const calls: Array<string | undefined> = [];
+    const operations: LifecycleOperations = {
+      start: async () => [],
+      stop: async (name) => {
+        calls.push(name);
+        return ["web"];
+      },
+      restart: async () => [],
+      status: async () => [],
+    };
+
+    const result = await runStopCommand(["web"], io.context, { operations });
+
+    expect(result).toEqual({ exitCode: 0 });
+    expect(calls).toEqual(["web"]);
+    expect(io.stdout).toEqual(["Stopped web."]);
+  });
+
+  test("restarts Direct Managed Processes", async () => {
+    const io = context();
+    const calls: Array<string | undefined> = [];
+    const operations: LifecycleOperations = {
+      start: async () => [],
+      stop: async () => [],
+      restart: async (name) => {
+        calls.push(name);
+        return ["web"];
+      },
+      status: async () => [],
+    };
+
+    const result = await runRestartCommand(["web"], io.context, { operations });
+
+    expect(result).toEqual({ exitCode: 0 });
+    expect(calls).toEqual(["web"]);
+    expect(io.stdout).toEqual(["Restarted web."]);
   });
 });

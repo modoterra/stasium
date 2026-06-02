@@ -231,17 +231,24 @@ type CleanupOptions = {
   logger?: (message: string) => void;
   timeoutMs?: number;
   knownServices?: string[];
+  targetServices?: string[];
 };
 
 export const cleanupExistingPids = async (
   cwd: string,
-  { logger, timeoutMs = DEFAULT_WAIT_MS, knownServices = [] }: CleanupOptions = {},
+  {
+    logger,
+    timeoutMs = DEFAULT_WAIT_MS,
+    knownServices = [],
+    targetServices = [],
+  }: CleanupOptions = {},
 ): Promise<void> => {
   const dir = getPidDir(cwd);
   const pidFiles = await listPidFiles(dir);
   if (pidFiles.length === 0) return;
 
   const known = new Set(knownServices.map((name) => sanitizeServiceName(name)));
+  const targets = new Set(targetServices.map((name) => sanitizeServiceName(name)));
   const pidMap = new Map<
     number,
     { files: string[]; unknownServices: string[]; records: PidFileRecord[] }
@@ -256,6 +263,7 @@ export const cleanupExistingPids = async (
     const pid = getPidFromParsed(parsed);
 
     const serviceName = getServiceNameFromFile(path);
+    if (targets.size > 0 && !targets.has(serviceName)) continue;
     const unknown = known.size > 0 && !known.has(serviceName) ? serviceName : null;
     const entry = pidMap.get(pid);
     if (entry) {
