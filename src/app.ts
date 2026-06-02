@@ -11,6 +11,7 @@ import {
   runStatusCommand,
   runStopCommand,
 } from "./lifecycle-command";
+import { runLogsCommand } from "./logs-command";
 import {
   addProcessDefinition,
   addSelectedDiscoveryCandidates,
@@ -1024,6 +1025,11 @@ export const run = async () => {
         usage: "stasium restart [managed-process-name]",
         description: "Restart Direct Managed Processes without opening the Workspace.",
         handler: runRestartCommand,
+      },
+      logs: {
+        usage: "stasium logs <managed-process-name> [--follow]",
+        description: "Print durable Process Output for a Managed Process.",
+        handler: runLogsCommand,
       },
     },
   });
