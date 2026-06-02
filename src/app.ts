@@ -14,6 +14,7 @@ import { ProcessClaimStore } from "./process-claim";
 import { createProjectManifest } from "./project-setup";
 import { ServiceManager } from "./service-manager";
 import { fileExists, getErrorMessage } from "./shared";
+import { runDiscoverCommand, runDoctorCommand, runValidateCommand } from "./inspection-command";
 import { currentUpdatePlatform, runStartupUpdateCheck } from "./startup-update";
 import type { AppConfig, Manifest, Shortcut } from "./types";
 import { type UiControls, buildInitUi, buildUi } from "./ui";
@@ -972,6 +973,21 @@ export const run = async () => {
             currentVersion: STASIUM_VERSION,
             executablePath: process.argv[0] ?? process.execPath,
           }),
+      },
+      validate: {
+        usage: "stasium validate",
+        description: "Validate the Project Manifest.",
+        handler: runValidateCommand,
+      },
+      doctor: {
+        usage: "stasium doctor",
+        description: "Check Project readiness for Stasium.",
+        handler: runDoctorCommand,
+      },
+      discover: {
+        usage: "stasium discover",
+        description: "Run Discovery and print proposed Process Definitions.",
+        handler: runDiscoverCommand,
       },
     },
   });
