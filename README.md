@@ -1,23 +1,51 @@
-# stasium
+<p align="center">
+  <img src="docs/assets/stasium.png" alt="Stasium" width="160">
+</p>
 
-Stasium is a local service runner for project workspaces. It reads `stasium.toml`, starts services in dependency order, streams logs into a terminal UI, and shuts spawned processes down cleanly.
+<h1 align="center">Stasium</h1>
 
-## Installation
+**A beautiful local development process orchestrator for projects that have outgrown one terminal tab.**
 
-**Linux / macOS:**
+Stasium turns a Project's local Development Stack into something you can discover, start, observe, script, and shut down safely. It gives you a fast terminal Workspace for day-to-day work, plus a real command-line interface for automation.
+
+```bash
+stasium
+```
+
+Open the Workspace, manage your Managed Processes, inspect Process Output, edit your Manifest, and leave knowing Stasium will clean up the Direct Managed Processes it owns.
+
+## Why Stasium
+
+Modern local development is rarely one process. A web server, worker, queue, database proxy, asset watcher, and Docker Compose stack all need to start in the right order, stay observable, and shut down cleanly.
+
+Stasium gives that workflow one home:
+
+- **Interactive Workspace** for managing a Project from a polished terminal interface.
+- **Scriptable CLI** for `start`, `stop`, `restart`, `status`, `logs`, `validate`, `doctor`, and `update`.
+- **Discovery** that proposes Process Definitions from the Project instead of making you write everything by hand.
+- **Startup Dependencies** so Direct Managed Processes come up in the right order.
+- **Process Claims** so Stasium can safely find and clean up Direct Managed Processes it started.
+- **Durable Process Output** so `stasium logs <name>` works outside the active Workspace.
+- **External Runtime Visibility** for Docker Compose-backed Managed Processes without pretending Stasium owns them.
+- **Self-update support** with checksum-verified release assets.
+
+## Install
+
+Linux and macOS:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/modoterra/stasium/main/install.sh | sh
 ```
 
-**Windows (PowerShell):**
+Windows PowerShell:
 
 ```powershell
 irm https://raw.githubusercontent.com/modoterra/stasium/main/install.ps1 | iex
 ```
 
-**Manual download:** grab the binary for your platform from
-[GitHub Releases](https://github.com/modoterra/stasium/releases/latest).
+Manual download:
+
+Download the latest binary from [GitHub Releases](https://github.com/modoterra/stasium/releases/latest).
 
 | Binary                    | Platform            |
 | ------------------------- | ------------------- |
@@ -26,26 +54,132 @@ irm https://raw.githubusercontent.com/modoterra/stasium/main/install.ps1 | iex
 | `stasium-macos-arm64`     | macOS Apple Silicon |
 | `stasium-windows-x64.exe` | Windows x86_64      |
 
-## Startup Updates
+## Quick Start
 
-Stasium checks the stable Update Channel on startup before opening Project Setup or the Workspace.
-The check reads `update-stable.json` from the latest GitHub Release, compares it to the running
-Stasium version, and selects the matching binary for the current platform.
+Create or discover a Manifest:
 
-Startup update checks are bounded and fail open. Network failures, unavailable metadata,
-unsupported platforms, malformed preferences, and unsafe installs are reported as warnings and do not
-stop normal usage.
+```bash
+stasium init
+```
 
-When an update can be installed safely, Stasium downloads the release asset to a temporary location,
-verifies its SHA-256 checksum from release metadata, replaces the current binary, and asks you to
-restart Stasium. If Stasium cannot safely replace the current executable, it prints manual update
-instructions instead.
+Or create one non-interactively from default Discovery results:
 
-Stasium only self-updates executables that look like Stasium binaries. Package-manager-owned
-installs, development runs such as `bun run dev:cli`, or other unsafe paths fall back to manual
-update instructions so Stasium does not overwrite another tool's executable.
+```bash
+stasium init --yes
+```
 
-Startup update preferences live outside project Manifests at:
+Open the Workspace:
+
+```bash
+stasium
+```
+
+Run the Development Stack without opening the Workspace:
+
+```bash
+stasium start
+stasium status
+stasium logs web --follow
+stasium stop
+```
+
+## Manifest
+
+Stasium stores Project-local Process Definitions in `stasium.toml`.
+
+```toml
+[[service]]
+name = "web"
+command = "bun run dev"
+depends_on = ["worker"]
+
+[[service]]
+name = "worker"
+command = ["bun", "run", "worker"]
+restart_policy = "on-failure"
+```
+
+Each Process Definition can include:
+
+- `name`: the Managed Process name.
+- `command`: a Launch Instruction as a string or argv array.
+- `working_dir`: optional Project-relative working directory.
+- `env`: optional environment values.
+- `depends_on`: Startup Dependencies by Managed Process name.
+- `restart_policy`: `never`, `on-failure`, or `always`.
+
+## CLI
+
+Stasium has a cobra-style command tree. The root command stays interactive; subcommands are plain terminal commands for scripts and CI.
+
+| Command                                       | What it does                                     |
+| --------------------------------------------- | ------------------------------------------------ |
+| `stasium`                                     | Open the Workspace, or Project Setup if needed   |
+| `stasium init`                                | Start interactive Project Setup                  |
+| `stasium init --yes`                          | Create a Manifest from default Discovery results |
+| `stasium discover`                            | Print Candidates without writing the Manifest    |
+| `stasium validate`                            | Validate the Manifest                            |
+| `stasium doctor`                              | Check Project readiness                          |
+| `stasium start [name]`                        | Start all or one Direct Managed Process          |
+| `stasium stop [name]`                         | Stop all or one Direct Managed Process           |
+| `stasium restart [name]`                      | Restart all or one Direct Managed Process        |
+| `stasium status`                              | Print known Managed Process state                |
+| `stasium logs <name> [--follow]`              | Print or follow durable Process Output           |
+| `stasium update [--check] [--channel <name>]` | Check for and install Stasium updates            |
+| `stasium config get <key>`                    | Read supported preferences                       |
+| `stasium config set <key> <value>`            | Write supported preferences                      |
+| `stasium version` / `stasium --version`       | Print the installed Stasium version              |
+| `stasium help [command]` / `--help`           | Show help                                        |
+
+Supported config keys:
+
+- `update.channel`
+- `update.enabled`
+
+## Workspace
+
+The Workspace is the interactive Stasium experience. It shows Manifest-backed Direct Managed Processes, External Managed Processes from supported External Runtimes, and Process Output in one terminal UI.
+
+Common keys:
+
+| Key                  | Action                                    |
+| -------------------- | ----------------------------------------- |
+| `s`                  | Start selected Managed Process            |
+| `x`                  | Stop selected Managed Process             |
+| `r`                  | Restart selected Managed Process          |
+| `a`                  | Add a Process Definition                  |
+| `e`                  | Edit selected Process Definition          |
+| `d`                  | Delete selected Process Definition        |
+| `i`                  | Run Discovery and add selected Candidates |
+| `tab`                | Cycle panels                              |
+| `1`, `2`, `3`, `4`   | Toggle Workspace panel layouts            |
+| `q`, `esc`, `ctrl+c` | Shut down and exit                        |
+
+Project Setup uses `up/down`, `space`, `a`, `n`, and `enter` to choose Candidates.
+
+## Process Ownership
+
+Stasium is deliberate about ownership:
+
+- Direct Managed Processes are started by Stasium and tracked with Process Claims.
+- Shutdown follows reverse Startup Dependency ordering where applicable.
+- On Linux and macOS, Stasium manages Direct Managed Processes as process groups and can tear down spawned descendants.
+- On Windows, Stasium only guarantees direct child shutdown.
+- External Managed Processes, such as Docker Compose entries, remain owned by their External Runtime. Stasium can show them and forward lifecycle actions, but it does not claim ownership over them.
+
+## Updates
+
+Stasium checks the stable Update Channel on startup before opening Project Setup or the Workspace. Checks are bounded and fail open: network errors, malformed preferences, unavailable metadata, unsupported platforms, or unsafe install paths become warnings instead of blocking work.
+
+Run updates explicitly:
+
+```bash
+stasium update
+stasium update --check
+stasium update --channel stable
+```
+
+Startup update preferences live at:
 
 ```text
 ~/.config/stasium/update.json
@@ -60,21 +194,14 @@ Default preferences:
 }
 ```
 
-To disable startup update checks:
+Use the CLI to manage them:
 
-```json
-{
-  "enabled": false,
-  "channel": "stable"
-}
+```bash
+stasium config get update.channel
+stasium config set update.enabled false
 ```
 
-Supported auto-update assets match the release binaries listed above. If Stasium reports that an
-update cannot be applied automatically, download the matching asset from GitHub Releases and replace
-your installed binary manually or through the package manager that installed it.
-
-Release builds stamp the Git tag version into the binary before packaging, so version comparisons use
-the released Stasium version rather than the repository development version.
+Release builds stamp the Git tag version into the binary before packaging. Update metadata is published as `update-stable.json` with SHA-256 checksums for each supported platform asset.
 
 ## Development
 
@@ -84,78 +211,60 @@ Install dependencies:
 bun install
 ```
 
-Run the CLI:
+Run the CLI from source:
 
 ```bash
 bun run dev:cli
 ```
 
-Initialize a manifest:
-
-```bash
-bun run index.ts init
-```
-
-Run the Vite website:
+Run the website locally:
 
 ```bash
 bun run dev
 ```
 
-`init` opens an interactive selector of detected services. Use `up/down` to move,
-`space` to toggle, `a` to select all, `n` to clear, and `enter` to create `stasium.toml`.
-
-Inside the runtime TUI, focus the Manifest panel and press `i` to discover services
-again and add them to the current manifest (`up/down` move, `space` toggle, `a` all,
-`n` none, `enter` add selected, `esc` cancel).
-
-Service cleanup guarantees are strongest on Linux and macOS, where `stasium` manages
-services as process groups and can tear down spawned descendants. On Windows,
-`stasium` only guarantees direct child shutdown.
-
-Discovery strategies are data-driven via TOML:
-
-- Built-in catalog: `src/discovery/strategies.toml`
-- Optional project overrides: `.stasium/discovery.toml`
-
-Commands:
+Quality gates:
 
 ```bash
 bun run lint
-bun run format
 bun run format:check
 bun run typecheck
 bun run test
 bun run build
+```
+
+Useful build commands:
+
+```bash
 bun run build:cli
 bun run build:site
 bun run preview
-bun run init:hooks
 ```
 
-Tooling:
+Discovery strategies are data-driven TOML:
 
-- Oxlint runs lint checks.
-- Oxfmt handles formatting.
-- TypeScript checks the CLI, tests, Vite config, and website.
-- Bun runs tests and builds the standalone CLI binary.
+- Built-in catalog: `src/discovery/strategies.toml`
+- Optional Project overrides: `.stasium/discovery.toml`
 
-GitHub Actions:
+## Release
 
-- CI runs on PRs and pushes to main, enforces Conventional Commits, and runs quality gates.
-- Release runs after successful CI on main, uses semantic-release, and uploads binaries.
-- Changelogs are published in GitHub Releases and synced to `CHANGELOG.md`.
-- Release automation expects a `GH_TOKEN` repository secret with `repo` + `workflow` scope.
-
-Commit and branch rules:
-
-- Commits must follow Conventional Commits.
-- Branch names must match: `main`, `develop`, or `type/name` where type is one of
-  `feature`, `fix`, `chore`, `docs`, `refactor`, `test`, `ci`.
+Releases are tag-driven. Pushing a tag like `v0.4.0` runs the release workflow, builds platform binaries, generates checksums and update metadata, and publishes a GitHub Release.
 
 ## Contributing
 
-See `CONTRIBUTING.md` for contribution workflow and required checks.
+Contributions are welcome. Before opening a PR, run:
+
+```bash
+bun run lint
+bun run format:check
+bun run typecheck
+bun run test
+bun run build
+```
+
+Commits use Conventional Commits. Branch names must be `main`, `develop`, or `type/name`, where type is one of `feature`, `fix`, `chore`, `docs`, `refactor`, `test`, or `ci`.
+
+See `CONTRIBUTING.md` for the full contribution workflow.
 
 ## Code of Conduct
 
