@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { type KeyEvent, createCliRenderer } from "@opentui/core";
+import { runConfigCommand } from "./config-command";
 import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import { FocusManager } from "./focus";
 import { DiscoverySelection, detectServices, formatServiceSummary } from "./init";
@@ -992,6 +993,11 @@ export const run = async () => {
         usage: "stasium discover",
         description: "Run Discovery and print proposed Process Definitions.",
         handler: runDiscoverCommand,
+      },
+      config: {
+        usage: "stasium config <get|set> <key> [value]",
+        description: "Read or write supported Stasium preferences.",
+        handler: runConfigCommand,
       },
     },
   });
