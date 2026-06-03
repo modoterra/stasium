@@ -19,6 +19,7 @@ import type { AppConfig, Manifest, Shortcut } from "./types";
 import { type UiControls, buildInitUi, buildUi } from "./ui";
 import { STASIUM_VERSION } from "./version";
 import { startWorkspace, type ShutdownController } from "./workspace-startup";
+import { runCommand } from "./cli";
 
 const MANIFEST_PATH = "stasium.toml";
 
@@ -795,8 +796,7 @@ const startInitFlow = (
   })();
 };
 
-export const run = async () => {
-  const args = process.argv.slice(2);
+const runInteractiveApp = async (args: string[]): Promise<void> => {
   const hasManifest = await fileExists(MANIFEST_PATH);
   const teardownRef: { current: (() => void) | null } = { current: null };
   const shutdownRef: { current: ShutdownController | null } = { current: null };
@@ -936,4 +936,17 @@ export const run = async () => {
   });
 
   renderer.start();
+};
+
+export const run = async () => {
+  const result = await runCommand({
+    argv: process.argv.slice(2),
+    legacyRootCommands: ["init"],
+    root: async (args) => {
+      await runInteractiveApp(args);
+      return { exitCode: typeof process.exitCode === "number" ? process.exitCode : 0 };
+    },
+  });
+
+  process.exitCode = result.exitCode;
 };
