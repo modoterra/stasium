@@ -1,4 +1,8 @@
-# Stasium
+<p align="center">
+  <img src="docs/assets/stasium.png" alt="Stasium" width="160">
+</p>
+
+<h1 align="center">Stasium</h1>
 
 **A beautiful local development process orchestrator for projects that have outgrown one terminal tab.**
 
