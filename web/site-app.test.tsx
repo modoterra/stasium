@@ -1,14 +1,43 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, test } from "vitest";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { beforeEach, describe, expect, test } from "vitest";
 
 import SiteApp from "./site-app";
 
 describe("SiteApp", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    document.documentElement.className = "";
+  });
+
   test("renders the current website shell", () => {
     render(<SiteApp />);
 
     expect(screen.getByText("Stasium")).toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: /download free/i })).not.toHaveLength(0);
+    const pageNav = screen.getByRole("navigation", { name: /page sections/i });
+
+    expect(within(pageNav).getByRole("link", { name: /install/i })).toHaveAttribute(
+      "href",
+      "#install",
+    );
+    expect(within(pageNav).getByRole("link", { name: /quickstart/i })).toHaveAttribute(
+      "href",
+      "#quickstart",
+    );
     expect(screen.getByText("The workspace for your dev stack")).toBeInTheDocument();
+  });
+
+  test("toggles and persists dark mode", async () => {
+    const user = userEvent.setup();
+    render(<SiteApp />);
+
+    await user.click(screen.getByRole("button", { name: /use dark mode/i }));
+
+    await waitFor(() => expect(window.localStorage.getItem("stasium-theme")).toBe("dark"));
+    expect(document.documentElement).toHaveClass("dark");
+    expect(screen.getByRole("button", { name: /use light mode/i })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 });

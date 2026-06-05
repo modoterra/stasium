@@ -1,9 +1,9 @@
-import { Check, ChevronDown, Download, Moon, Sparkles, Sun } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Check, ChevronDown, Download, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
-const navItems = ["Features", "Workflow", "Compare", "Docs"];
+import { FloatingNav } from "./components/floating-nav";
+import { useThemePreference } from "./hooks/use-theme-preference";
 
 const painPoints = [
   {
@@ -28,63 +28,11 @@ const services = [
 ];
 
 function SiteApp() {
-  const [isDark, setIsDark] = useState(() => {
-    if (typeof window === "undefined") {
-      return false;
-    }
-
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", isDark);
-  }, [isDark]);
+  const { isDark, toggleTheme } = useThemePreference();
 
   return (
     <main className="min-h-[100svh] bg-[#f8f8f4] font-['Instrument_Sans_Variable'] text-[#211f1d] antialiased dark:bg-[#101113] dark:text-[#f7f2e8]">
-      <header className="sticky top-0 z-30 bg-[#fbfbf7]/95 px-4 py-3 shadow-[0_1px_0_rgba(20,31,54,0.12)] backdrop-blur dark:bg-[#101113]/95 dark:shadow-[0_1px_0_rgba(255,255,255,0.12)]">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-6">
-          <a className="flex items-center gap-3 text-xl font-semibold tracking-[-0.04em]" href="/">
-            <img
-              className="size-8 object-contain"
-              src={isDark ? "/stasium-logo-dark.png" : "/stasium-logo-light.png"}
-              alt=""
-            />
-            <span>Stasium</span>
-          </a>
-
-          <nav className="hidden items-center gap-10 text-sm text-[#42516b] md:flex dark:text-[#c8d2e4]">
-            {navItems.map((item) => (
-              <a
-                key={item}
-                className="hover:text-[#155cff] dark:hover:text-[#6ea0ff]"
-                href="#features"
-              >
-                {item}
-              </a>
-            ))}
-          </nav>
-
-          <div className="flex items-center gap-2">
-            <Button
-              aria-label={isDark ? "Use light mode" : "Use dark mode"}
-              className="size-9 rounded-none bg-transparent p-0 text-[#263248] hover:bg-[#eef1f7] dark:text-[#f7f2e8] dark:hover:bg-white/10"
-              size="icon"
-              variant="ghost"
-              onClick={() => setIsDark((current) => !current)}
-            >
-              {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-            </Button>
-            <a
-              className="hidden bg-[#155cff] px-6 py-3 text-sm font-semibold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.28)] transition hover:bg-[#0047e8] sm:inline-flex"
-              href="https://github.com/modoterra/stasium/releases/latest"
-            >
-              Download free
-              <Download className="ml-2 size-4" />
-            </a>
-          </div>
-        </div>
-      </header>
+      <FloatingNav isDark={isDark} onToggleTheme={toggleTheme} />
 
       <section className="relative isolate min-h-[100svh] overflow-hidden bg-[#155cff] px-4 pt-24 text-white dark:bg-[#0b3bb9]">
         <div className="absolute inset-0 -z-10 bg-[linear-gradient(rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.16)_1px,transparent_1px)] bg-[size:128px_128px] opacity-70" />
@@ -174,7 +122,33 @@ function SiteApp() {
         </div>
       </section>
 
-      <section id="features" className="bg-[#fbfbf7] px-4 pb-28 pt-36 dark:bg-[#101113]">
+      <section id="install" className="scroll-mt-28 bg-[#fbfbf7] px-4 pt-36 dark:bg-[#101113]">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="mx-auto inline-flex items-center gap-2 bg-[#efefea] px-3 py-2 text-sm text-[#6a625d] dark:bg-white/10 dark:text-[#c9c2ba]">
+              <Download className="size-4" /> Install
+            </div>
+            <h2 className="mt-7 text-balance text-[clamp(2.5rem,5vw,5rem)] font-semibold leading-[0.98] tracking-[-0.06em]">
+              Get Stasium onto your path.
+            </h2>
+          </div>
+        </div>
+      </section>
+
+      <section id="quickstart" className="scroll-mt-28 bg-[#fbfbf7] px-4 pt-24 dark:bg-[#101113]">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="mx-auto inline-flex items-center gap-2 bg-[#efefea] px-3 py-2 text-sm text-[#6a625d] dark:bg-white/10 dark:text-[#c9c2ba]">
+              <Check className="size-4" /> Quickstart
+            </div>
+            <h2 className="mt-7 text-balance text-[clamp(2.5rem,5vw,5rem)] font-semibold leading-[0.98] tracking-[-0.06em]">
+              Run one command.
+            </h2>
+          </div>
+        </div>
+      </section>
+
+      <section id="detects" className="scroll-mt-28 bg-[#fbfbf7] px-4 pt-24 dark:bg-[#101113]">
         <div className="mx-auto max-w-7xl">
           <div className="mx-auto max-w-3xl text-center">
             <div className="mx-auto inline-flex items-center gap-2 bg-[#efefea] px-3 py-2 text-sm text-[#6a625d] dark:bg-white/10 dark:text-[#c9c2ba]">
@@ -237,6 +211,19 @@ function SiteApp() {
                 <ChevronDown className="ml-2 size-4" />
               </Button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="manifest" className="scroll-mt-28 bg-[#fbfbf7] px-4 py-28 dark:bg-[#101113]">
+        <div className="mx-auto max-w-7xl">
+          <div className="mx-auto max-w-3xl text-center">
+            <div className="mx-auto inline-flex items-center gap-2 bg-[#efefea] px-3 py-2 text-sm text-[#6a625d] dark:bg-white/10 dark:text-[#c9c2ba]">
+              <Check className="size-4" /> Manifest
+            </div>
+            <h2 className="mt-7 text-balance text-[clamp(2.5rem,5vw,5rem)] font-semibold leading-[0.98] tracking-[-0.06em]">
+              Stasium writes down what it finds.
+            </h2>
           </div>
         </div>
       </section>
