@@ -69,7 +69,7 @@ jobs:
         run: bun run typecheck
 
       - name: Tests
-        run: bun test
+        run: bun run test
 
       - name: Build
         run: bun run build
