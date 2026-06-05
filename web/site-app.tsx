@@ -3,6 +3,7 @@ import { Check, ChevronDown, Download, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 import { FloatingNav } from "./components/floating-nav";
+import { Hero } from "./components/hero";
 import { useThemePreference } from "./hooks/use-theme-preference";
 
 const painPoints = [
@@ -11,8 +12,8 @@ const painPoints = [
     body: "Your dev server, queue worker, tests, and database logs all live in separate terminal tabs.",
   },
   {
-    title: "Blind agents",
-    body: "AI tools generate against stale assumptions when they cannot see what is actually running.",
+    title: "Scattered output",
+    body: "Process Output split across terminals makes it hard to see what changed and what failed.",
   },
   {
     title: "Unknown state",
@@ -34,93 +35,7 @@ function SiteApp() {
     <main className="min-h-[100svh] bg-[#f8f8f4] font-['Instrument_Sans_Variable'] text-[#211f1d] antialiased dark:bg-[#101113] dark:text-[#f7f2e8]">
       <FloatingNav isDark={isDark} onToggleTheme={toggleTheme} />
 
-      <section className="relative isolate min-h-[100svh] overflow-hidden bg-[#155cff] px-4 pt-24 text-white dark:bg-[#0b3bb9]">
-        <div className="absolute inset-0 -z-10 bg-[linear-gradient(rgba(255,255,255,0.16)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.16)_1px,transparent_1px)] bg-[size:128px_128px] opacity-70" />
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(circle,rgba(255,255,255,0.28)_0_5px,transparent_6px)] bg-[size:128px_128px] opacity-50" />
-        <div className="absolute bottom-0 left-0 right-0 -z-10 h-24 bg-[repeating-linear-gradient(135deg,rgba(255,255,255,0.18)_0_1px,transparent_1px_12px)] opacity-60" />
-
-        <div className="mx-auto flex max-w-7xl flex-col items-center text-center">
-          <div className="inline-flex items-center gap-2 bg-white/12 px-3 py-2 text-sm shadow-[inset_0_0_0_1px_rgba(255,255,255,0.5)]">
-            <span className="grid size-5 place-items-center bg-white text-[#155cff]">
-              <Check className="size-4" />
-            </span>
-            Not a process manager. On purpose.
-          </div>
-
-          <h1 className="mt-10 max-w-5xl text-balance text-[clamp(3.4rem,8vw,8.5rem)] font-semibold leading-[0.95] tracking-[-0.065em]">
-            The workspace for your dev stack
-          </h1>
-          <p className="mt-7 max-w-2xl text-pretty text-xl leading-8 text-white/88">
-            Run your app, workers, databases, tests, and agent sessions from one manifest-powered
-            terminal workspace.
-          </p>
-
-          <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
-            <a
-              className="inline-flex min-w-48 items-center justify-center bg-white px-7 py-4 font-semibold text-[#155cff] shadow-[0_14px_40px_rgba(0,0,0,0.18)] transition hover:bg-[#edf3ff]"
-              href="https://github.com/modoterra/stasium/releases/latest"
-            >
-              Download free
-              <Download className="ml-2 size-4" />
-            </a>
-            <a
-              className="inline-flex min-w-48 items-center justify-center bg-white/10 px-7 py-4 font-semibold text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.34)] transition hover:bg-white/15"
-              href="https://github.com/modoterra/stasium"
-            >
-              View source
-            </a>
-          </div>
-
-          <p className="mt-6 text-white/70">Need setup help? Browse the Stasium docs.</p>
-
-          <div className="mt-20 w-full max-w-5xl translate-y-12 shadow-[0_34px_90px_rgba(0,0,0,0.26)]">
-            <div className="flex items-center justify-between rounded-t-xl bg-[#f5f5f3] px-4 py-3 text-xs text-[#777] dark:bg-[#dfe2e7] dark:text-[#4c5360]">
-              <div className="flex gap-2">
-                <span className="size-3 rounded-full bg-[#ff5f57]" />
-                <span className="size-3 rounded-full bg-[#febc2e]" />
-                <span className="size-3 rounded-full bg-[#28c840]" />
-              </div>
-              <span className="font-['JetBrains_Mono_Variable']">stasium.io - workspace</span>
-              <span>0.4.0</span>
-            </div>
-            <div className="grid min-h-[420px] bg-[#fbfbfa] text-left text-[#1f242d] md:grid-cols-[270px_1fr] dark:bg-[#f7f7f4]">
-              <aside className="hidden bg-[#eef0f4] p-5 text-sm text-[#5c6575] md:block">
-                <div className="mb-5 flex items-center gap-2 font-semibold text-[#151922]">
-                  <span className="size-3 rounded-sm bg-[#155cff]" /> stasium.toml
-                </div>
-                {["web", "queue", "scheduler", "tests", "postgres", "redis"].map((item, index) => (
-                  <div key={item} className="mb-4 flex items-center gap-3">
-                    <span
-                      className={
-                        index === 3
-                          ? "size-2 rounded-full bg-[#ee3d3d]"
-                          : "size-2 rounded-full bg-[#39a84a]"
-                      }
-                    />
-                    <span className="font-medium text-[#343b48]">{item}</span>
-                  </div>
-                ))}
-              </aside>
-              <div className="grid place-items-center p-8">
-                <div className="w-full max-w-xl">
-                  <p className="mb-6 text-center font-['JetBrains_Mono_Variable'] text-5xl font-bold tracking-[-0.12em] text-[#222]">
-                    stasium
-                  </p>
-                  <div className="bg-[#eef0ea] p-5 font-['JetBrains_Mono_Variable'] text-sm text-[#4d5360] shadow-[inset_4px_0_0_#7d62d9]">
-                    <p>Ask anything... "why did tests restart?"</p>
-                    <p className="mt-4">
-                      <span className="text-[#7d62d9]">Build</span> web queue postgres redis
-                    </p>
-                  </div>
-                  <p className="mt-4 text-right font-['JetBrains_Mono_Variable'] text-xs text-[#6d7380]">
-                    ctrl+t logs · tab services · ctrl+p commands
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+      <Hero />
 
       <section id="install" className="scroll-mt-28 bg-[#fbfbf7] px-4 pt-36 dark:bg-[#101113]">
         <div className="mx-auto max-w-7xl">
@@ -186,7 +101,7 @@ function SiteApp() {
                 One terminal. Full visibility.
               </h2>
               <p className="mt-8 max-w-2xl text-xl leading-8 text-[#6f6862] dark:text-[#c8c1b8]">
-                Define your stack once. Start it once. Let agents inspect the output instead of
+                Define your stack once. Start it once. Keep Process Output visible instead of
                 guessing whether the world is on fire.
               </p>
             </div>

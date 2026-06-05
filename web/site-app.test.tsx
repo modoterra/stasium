@@ -24,7 +24,10 @@ describe("SiteApp", () => {
       "href",
       "#quickstart",
     );
-    expect(screen.getByText("The workspace for your dev stack")).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: /replace npm run dev guesswork/i }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/agent/i)).not.toBeInTheDocument();
   });
 
   test("toggles and persists dark mode", async () => {
