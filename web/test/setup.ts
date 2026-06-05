@@ -24,6 +24,14 @@ Object.defineProperty(window, "localStorage", {
   value: createStorage(),
 });
 
+Object.defineProperty(window.navigator, "clipboard", {
+  configurable: true,
+  writable: true,
+  value: {
+    writeText: async () => {},
+  },
+});
+
 Object.defineProperty(window, "matchMedia", {
   writable: true,
   value: (query: string) => ({

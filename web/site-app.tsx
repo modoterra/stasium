@@ -1,9 +1,10 @@
-import { Check, ChevronDown, Download, Sparkles } from "lucide-react";
+import { Check, ChevronDown, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
 import { FloatingNav } from "./components/floating-nav";
 import { Hero } from "./components/hero";
+import { InstallSection } from "./components/install-section";
 import { useThemePreference } from "./hooks/use-theme-preference";
 
 const painPoints = [
@@ -37,18 +38,7 @@ function SiteApp() {
 
       <Hero />
 
-      <section id="install" className="scroll-mt-28 bg-[#fbfbf7] px-4 pt-36 dark:bg-[#101113]">
-        <div className="mx-auto max-w-7xl">
-          <div className="mx-auto max-w-3xl text-center">
-            <div className="mx-auto inline-flex items-center gap-2 bg-[#efefea] px-3 py-2 text-sm text-[#6a625d] dark:bg-white/10 dark:text-[#c9c2ba]">
-              <Download className="size-4" /> Install
-            </div>
-            <h2 className="mt-7 text-balance text-[clamp(2.5rem,5vw,5rem)] font-semibold leading-[0.98] tracking-[-0.06em]">
-              Get Stasium onto your path.
-            </h2>
-          </div>
-        </div>
-      </section>
+      <InstallSection />
 
       <section id="quickstart" className="scroll-mt-28 bg-[#fbfbf7] px-4 pt-24 dark:bg-[#101113]">
         <div className="mx-auto max-w-7xl">
