@@ -42,6 +42,7 @@ export function FloatingNav({ isDark, onToggleTheme }: FloatingNavProps) {
                     ? "rounded-full bg-[#155cff] px-4 py-2 font-medium text-white underline decoration-white decoration-2 underline-offset-4"
                     : "rounded-full px-4 py-2 hover:bg-[#eef1f7] hover:text-[#155cff] dark:hover:bg-white/10 dark:hover:text-[#6ea0ff]"
                 }
+                aria-current={isActive ? "page" : undefined}
                 href={`#${item.id}`}
               >
                 {item.label}

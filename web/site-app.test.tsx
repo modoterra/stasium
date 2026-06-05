@@ -20,6 +20,11 @@ describe("SiteApp", () => {
       "href",
       "#install",
     );
+    expect(within(pageNav).getByRole("link", { name: /install/i })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(within(pageNav).getByRole("link", { name: /install/i })).toHaveClass("underline");
     expect(within(pageNav).getByRole("link", { name: /quickstart/i })).toHaveAttribute(
       "href",
       "#quickstart",
@@ -28,6 +33,16 @@ describe("SiteApp", () => {
       screen.getByRole("heading", { name: /replace npm run dev guesswork/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/agent/i)).not.toBeInTheDocument();
+  });
+
+  test("copy buttons expose specific accessible labels", () => {
+    render(<SiteApp />);
+
+    expect(
+      screen.getByRole("button", { name: /copy after download on macos\/linux/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy first run/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /copy stasium.toml/i })).toBeInTheDocument();
   });
 
   test("toggles and persists dark mode", async () => {

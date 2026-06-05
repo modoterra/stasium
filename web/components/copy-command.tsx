@@ -27,6 +27,7 @@ export function CopyCommand({ label, command }: CopyCommandProps) {
           className="h-8 rounded-full bg-white/10 px-3 text-xs text-current hover:bg-white/20 dark:bg-black/10 dark:hover:bg-black/20"
           size="sm"
           variant="ghost"
+          aria-label={copied ? `${label} copied` : `Copy ${label}`}
           onClick={copy}
         >
           {copied ? <Check className="mr-2 size-3" /> : <Copy className="mr-2 size-3" />}

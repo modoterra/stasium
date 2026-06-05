@@ -42,7 +42,7 @@ describe("InstallSection", () => {
 
     render(<InstallSection />);
 
-    await user.click(screen.getAllByRole("button", { name: /copy/i })[1]!);
+    await user.click(screen.getByRole("button", { name: /copy build from source/i }));
 
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining("bun run build:cli"));
     await waitFor(() => expect(screen.getByText("Copied")).toBeInTheDocument());
