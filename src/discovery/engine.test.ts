@@ -52,7 +52,7 @@ describe("discovery engine", () => {
           },
           {
             name: "script",
-            kind: "json_first_existing",
+            kind: "json_first_existing_key",
             file: "package.json",
             paths: ["scripts.dev"],
           },
@@ -68,7 +68,7 @@ describe("discovery engine", () => {
       expect(detected.candidates).toHaveLength(1);
       expect(detected.candidates[0]?.service.launchInstruction).toEqual({
         executable: "bun",
-        arguments: ["run", "vite"],
+        arguments: ["run", "dev"],
       });
       expect(detected.candidates[0]?.service.workingDir).toBe(resolve(dir));
       expect(detected.candidates[0]?.service.environment).toEqual({});
@@ -97,7 +97,7 @@ describe("discovery engine", () => {
         capture: [
           {
             name: "script",
-            kind: "json_first_existing",
+            kind: "json_first_existing_key",
             file: "package.json",
             paths: ["scripts.dev"],
           },
@@ -221,6 +221,49 @@ app = FastAPI()
     }
   });
 
+  test("detects fresh laravel frontend as npm run dev", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-discovery-engine-"));
+
+    try {
+      await Bun.write(join(dir, "artisan"), "#!/usr/bin/env php\n");
+      await Bun.write(
+        join(dir, "composer.json"),
+        JSON.stringify(
+          {
+            require: {
+              "laravel/framework": "^11.0",
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      await Bun.write(
+        join(dir, "package.json"),
+        JSON.stringify(
+          {
+            scripts: {
+              dev: "vite",
+            },
+          },
+          null,
+          2,
+        ),
+      );
+
+      const loaded = await loadDiscoveryStrategies(dir);
+      const detected = await detectDiscoveryCandidates(dir, loaded.strategies);
+      const frontend = detected.candidates.find((candidate) => candidate.strategyId === "node-dev");
+
+      expect(frontend?.service.launchInstruction).toEqual({
+        executable: "npm",
+        arguments: ["run", "dev"],
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   test("detects laravel package services and keeps queue with horizon", async () => {
     const dir = await mkdtemp(join(tmpdir(), "stasium-discovery-engine-"));
 
@@ -252,6 +295,14 @@ app = FastAPI()
       );
 
       expect(byId.has("laravel-queue")).toBe(true);
+      expect(byId.get("laravel-app")?.service.launchInstruction).toEqual({
+        executable: "php",
+        arguments: ["artisan", "serve", "--host=127.0.0.1", "--port=8000"],
+      });
+      expect(byId.get("laravel-queue")?.service.launchInstruction).toEqual({
+        executable: "php",
+        arguments: ["artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=90"],
+      });
       expect(byId.has("laravel-horizon")).toBe(true);
       expect(byId.get("laravel-horizon")?.service.launchInstruction).toEqual({
         executable: "php",
@@ -259,11 +310,11 @@ app = FastAPI()
       });
       expect(byId.get("laravel-reverb")?.service.launchInstruction).toEqual({
         executable: "php",
-        arguments: ["artisan", "reverb:start"],
+        arguments: ["artisan", "reverb:start", "--host=127.0.0.1", "--port=8080"],
       });
       expect(byId.get("laravel-octane")?.service.launchInstruction).toEqual({
         executable: "php",
-        arguments: ["artisan", "octane:start"],
+        arguments: ["artisan", "octane:start", "--host=127.0.0.1", "--port=8000", "--watch"],
       });
       expect(byId.get("laravel-pulse-check")?.service.launchInstruction).toEqual({
         executable: "php",

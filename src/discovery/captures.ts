@@ -23,7 +23,7 @@ const resolvePackageManager = async (ctx: DiscoveryProbeContext): Promise<string
   if (await ctx.fileExists("pnpm-lock.yaml")) return "pnpm";
   if (await ctx.fileExists("yarn.lock")) return "yarn";
   if (await ctx.fileExists("package-lock.json")) return "npm";
-  return "bun";
+  return "npm";
 };
 
 const resolveJsonFirstExisting = async (
@@ -34,6 +34,19 @@ const resolveJsonFirstExisting = async (
     const raw = await ctx.getJsonPathValue(capture.file, path);
     const value = normalizeCapturedValue(raw);
     if (value !== null) return value;
+  }
+  return null;
+};
+
+const resolveJsonFirstExistingKey = async (
+  capture: Extract<StrategyCapture, { kind: "json_first_existing_key" }>,
+  ctx: DiscoveryProbeContext,
+): Promise<string | null> => {
+  for (const path of capture.paths) {
+    const raw = await ctx.getJsonPathValue(capture.file, path);
+    if (normalizeCapturedValue(raw) !== null) {
+      return path.split(".").at(-1) ?? null;
+    }
   }
   return null;
 };
@@ -60,6 +73,10 @@ const resolveCapture = async (
 
   if (capture.kind === "json_first_existing") {
     return resolveJsonFirstExisting(capture, ctx);
+  }
+
+  if (capture.kind === "json_first_existing_key") {
+    return resolveJsonFirstExistingKey(capture, ctx);
   }
 
   if (capture.kind === "toml_first_existing") {

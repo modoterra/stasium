@@ -12,7 +12,7 @@ all_json_paths = [{ file = "composer.json", path = "require.laravel/framework" }
 
 [strategy.service]
 name = "app"
-command = ["php", "artisan", "serve"]
+command = ["php", "artisan", "serve", "--host=127.0.0.1", "--port=8000"]
 working_dir = "."
 
 [[strategy]]
@@ -31,7 +31,7 @@ any_json_paths = [
 
 [strategy.service]
 name = "octane"
-command = ["php", "artisan", "octane:start"]
+command = ["php", "artisan", "octane:start", "--host=127.0.0.1", "--port=8000", "--watch"]
 working_dir = "."
 
 [[strategy]]
@@ -46,7 +46,7 @@ all_json_paths = [{ file = "composer.json", path = "require.laravel/framework" }
 
 [strategy.service]
 name = "queue"
-command = ["php", "artisan", "queue:work"]
+command = ["php", "artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=90"]
 working_dir = "."
 depends_on_ids = ["laravel-app"]
 
@@ -102,7 +102,7 @@ any_json_paths = [
 
 [strategy.service]
 name = "reverb"
-command = ["php", "artisan", "reverb:start"]
+command = ["php", "artisan", "reverb:start", "--host=127.0.0.1", "--port=8080"]
 working_dir = "."
 depends_on_ids = ["laravel-app"]
 
@@ -170,7 +170,7 @@ kind = "lockfile_package_manager"
 
 [[strategy.capture]]
 name = "script"
-kind = "json_first_existing"
+kind = "json_first_existing_key"
 file = "package.json"
 paths = ["scripts.dev", "scripts.start", "scripts.watch", "scripts.serve"]
 
@@ -224,7 +224,7 @@ kind = "lockfile_package_manager"
 
 [[strategy.capture]]
 name = "script"
-kind = "json_first_existing"
+kind = "json_first_existing_key"
 file = "package.json"
 paths = ["scripts.worker", "scripts.queue", "scripts.jobs", "scripts.background"]
 

@@ -1,7 +1,7 @@
 export const detectedStacks = [
   {
     title: "Laravel",
-    body: "Looks for artisan and composer.json, then shows app, queue, scheduler, and Reverb commands when the Project has them.",
+    body: "Looks for artisan and composer.json, then shows app, queue, scheduler, and Reverb commands with local-safe defaults.",
     detail: "Optional package clues can also show Octane, Horizon, and Pulse check commands.",
   },
   {

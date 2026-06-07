@@ -37,6 +37,12 @@ export interface JsonFirstExistingCapture extends StrategyCaptureBase {
   paths: string[];
 }
 
+export interface JsonFirstExistingKeyCapture extends StrategyCaptureBase {
+  kind: "json_first_existing_key";
+  file: string;
+  paths: string[];
+}
+
 export interface TomlFirstExistingCapture extends StrategyCaptureBase {
   kind: "toml_first_existing";
   file: string;
@@ -46,6 +52,7 @@ export interface TomlFirstExistingCapture extends StrategyCaptureBase {
 export type StrategyCapture =
   | LockfilePackageManagerCapture
   | JsonFirstExistingCapture
+  | JsonFirstExistingKeyCapture
   | TomlFirstExistingCapture;
 
 export interface StrategyServiceTemplate {

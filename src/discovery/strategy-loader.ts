@@ -4,6 +4,7 @@ import builtinStrategiesToml from "./strategies.toml" with { type: "text" };
 import type {
   DiscoveryStrategy,
   JsonFirstExistingCapture,
+  JsonFirstExistingKeyCapture,
   LoadedStrategies,
   RegexProbe,
   StrategyCapture,
@@ -246,6 +247,18 @@ const parseCapture = (value: unknown, context: string): StrategyCapture => {
     const file = readString(capture.file, `${context}.file`);
     const paths = readStringArray(capture.paths, `${context}.paths`);
     const parsed: JsonFirstExistingCapture = {
+      name,
+      kind,
+      file,
+      paths,
+    };
+    return parsed;
+  }
+
+  if (kind === "json_first_existing_key") {
+    const file = readString(capture.file, `${context}.file`);
+    const paths = readStringArray(capture.paths, `${context}.paths`);
+    const parsed: JsonFirstExistingKeyCapture = {
       name,
       kind,
       file,

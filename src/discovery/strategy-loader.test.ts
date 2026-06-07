@@ -16,7 +16,7 @@ all_files = ["package.json"]
 
 [[strategy.capture]]
 name = "script"
-kind = "json_first_existing"
+kind = "json_first_existing_key"
 file = "package.json"
 paths = ["scripts.dev"]
 
@@ -29,7 +29,7 @@ command = ["bun", "run", "\${script}"]
 
     expect(strategies).toHaveLength(1);
     expect(strategies[0]?.id).toBe("node-dev");
-    expect(strategies[0]?.capture[0]?.kind).toBe("json_first_existing");
+    expect(strategies[0]?.capture[0]?.kind).toBe("json_first_existing_key");
   });
 
   test("rejects unknown strategy keys", () => {
