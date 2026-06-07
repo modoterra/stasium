@@ -17,6 +17,8 @@
 - `bun run build` compiles the standalone binary to `dist/stasium` and builds the Vite website.
 - `bun run build:cli` compiles only the standalone binary.
 - `bun run build:site` builds only the Vite website.
+- Playwright is available from the vendored modules; agents can use it to open and inspect
+  pages during browser-based checks without installing a separate global CLI.
 
 Before opening or updating a PR, run: `bun run lint`, `bun run format:check`, `bun run typecheck`, `bun run test`, and `bun run build`.
 

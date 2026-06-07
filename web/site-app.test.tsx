@@ -30,7 +30,7 @@ describe("SiteApp", () => {
       "#quickstart",
     );
     expect(
-      screen.getByRole("heading", { name: /replace npm run dev guesswork/i }),
+      screen.getByRole("heading", { name: /start your project from one terminal/i }),
     ).toBeInTheDocument();
     expect(screen.queryByText(/agent/i)).not.toBeInTheDocument();
   });

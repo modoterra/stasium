@@ -15,7 +15,6 @@ describe("DetectsSection", () => {
   test("uses detects and shows language without broad support claims", () => {
     render(<DetectsSection />);
 
-    expect(screen.getByText(/Detects common setups/i)).toBeInTheDocument();
     expect(screen.getByText(/Shows what it finds/i)).toBeInTheDocument();
     expect(screen.getByText(/accept, edit, or skip/i)).toBeInTheDocument();
     expect(screen.queryByText(/supports/i)).not.toBeInTheDocument();

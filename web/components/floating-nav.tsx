@@ -14,21 +14,16 @@ export function FloatingNav({ isDark, onToggleTheme }: FloatingNavProps) {
 
   return (
     <header className="fixed inset-x-0 top-3 z-50 px-3 sm:top-5">
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 rounded-full bg-[#fbfbf7]/90 px-3 py-2 shadow-[0_12px_40px_rgba(21,35,71,0.16)] backdrop-blur dark:bg-[#101113]/90 dark:shadow-[0_12px_40px_rgba(0,0,0,0.35)]">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 bg-[#f7f2e8]/90 px-3 py-2 dark:bg-[#0c1017]/90">
         <a
-          className="flex shrink-0 items-center gap-2 text-sm font-semibold tracking-[-0.03em] sm:text-base"
+          className="flex min-h-10 shrink-0 items-center px-3 text-sm font-semibold tracking-[-0.03em] transition hover:bg-black/5 sm:text-base dark:hover:bg-white/8"
           href="/"
         >
-          <img
-            className="size-7 object-contain"
-            src={isDark ? "/stasium-logo-dark.png" : "/stasium-logo-light.png"}
-            alt=""
-          />
           <span>Stasium</span>
         </a>
 
         <nav
-          className="hidden items-center gap-1 text-sm text-[#42516b] md:flex dark:text-[#c8d2e4]"
+          className="hidden items-center gap-1 bg-black/[0.035] p-1 text-sm text-[#4f5d72] md:flex dark:bg-white/[0.06] dark:text-[#c9d3e3]"
           aria-label="Page sections"
         >
           {sectionNavItems.map((item) => {
@@ -39,8 +34,8 @@ export function FloatingNav({ isDark, onToggleTheme }: FloatingNavProps) {
                 key={item.id}
                 className={
                   isActive
-                    ? "rounded-full bg-[#155cff] px-4 py-2 font-medium text-white underline decoration-white decoration-2 underline-offset-4"
-                    : "rounded-full px-4 py-2 hover:bg-[#eef1f7] hover:text-[#155cff] dark:hover:bg-white/10 dark:hover:text-[#6ea0ff]"
+                    ? "bg-[#155cff] px-4 py-2 font-medium text-white underline decoration-white decoration-2 underline-offset-4"
+                    : "px-4 py-2 transition hover:bg-white/80 hover:text-[#155cff] dark:hover:bg-white/10 dark:hover:text-[#8ab2ff]"
                 }
                 aria-current={isActive ? "page" : undefined}
                 href={`#${item.id}`}
@@ -50,7 +45,7 @@ export function FloatingNav({ isDark, onToggleTheme }: FloatingNavProps) {
             );
           })}
           <a
-            className="rounded-full px-4 py-2 hover:bg-[#eef1f7] hover:text-[#155cff] dark:hover:bg-white/10 dark:hover:text-[#6ea0ff]"
+            className="px-4 py-2 transition hover:bg-white/80 hover:text-[#155cff] dark:hover:bg-white/10 dark:hover:text-[#8ab2ff]"
             href="https://github.com/modoterra/stasium"
           >
             GitHub
@@ -60,7 +55,7 @@ export function FloatingNav({ isDark, onToggleTheme }: FloatingNavProps) {
         <div className="flex items-center gap-1">
           <ThemeToggle isDark={isDark} onToggle={onToggleTheme} />
           <a
-            className="hidden items-center rounded-full bg-[#155cff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0047e8] sm:inline-flex"
+            className="hidden min-h-10 items-center bg-[#155cff] px-4 py-2 text-sm font-semibold text-white transition hover:bg-[#0047e8] sm:inline-flex"
             href="#install"
           >
             Install

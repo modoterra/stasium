@@ -1,4 +1,4 @@
-import { Download, ShieldCheck } from "lucide-react";
+import { Download, ShieldCheck, Terminal } from "lucide-react";
 
 import {
   afterDownloadCommand,
@@ -14,31 +14,33 @@ export function InstallSection() {
   const recommended = usePlatformDownload();
 
   return (
-    <section id="install" className="scroll-mt-28 bg-[#fbfbf7] px-4 pt-36 dark:bg-[#101113]">
-      <div className="mx-auto max-w-7xl">
-        <div className="mx-auto max-w-3xl text-center">
-          <div className="mx-auto inline-flex items-center gap-2 bg-[#efefea] px-3 py-2 text-sm text-[#6a625d] dark:bg-white/10 dark:text-[#c9c2ba]">
-            <Download className="size-4" /> Install
-          </div>
-          <h2 className="mt-7 text-balance text-[clamp(2.5rem,5vw,5rem)] font-semibold leading-[0.98] tracking-[-0.06em]">
+    <section id="install" className="scroll-mt-28 bg-[#f2eee3] px-4 py-16 dark:bg-[#08090d]">
+      <div className="mx-auto max-w-6xl">
+        <div className="flex max-w-3xl flex-col gap-5">
+          <h2 className="text-[clamp(1.9rem,4vw,3rem)] font-semibold leading-[1.05] tracking-[-0.045em]">
             Get Stasium onto your path.
           </h2>
-          <p className="mx-auto mt-6 max-w-2xl text-xl leading-8 text-[#6f6862] dark:text-[#c8c1b8]">
-            Download a release binary, make it executable, and run `stasium` in your Project.
+          <p className="max-w-2xl pt-1 text-base leading-7 text-[#6f6862] dark:text-[#c8c1b8]">
+            Download a binary, make it executable, run `stasium`.
           </p>
         </div>
 
-        <div className="mt-16 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-          <div className="bg-white p-6 shadow-[0_1px_0_rgba(0,0,0,0.08)] dark:bg-white/5 dark:shadow-none">
-            <p className="font-['JetBrains_Mono_Variable'] text-xs uppercase tracking-[0.12em] text-[#6a625d] dark:text-[#c9c2ba]">
-              Recommended download
-            </p>
-            <h3 className="mt-5 text-3xl font-semibold tracking-[-0.05em]">{recommended.label}</h3>
-            <p className="mt-3 font-['JetBrains_Mono_Variable'] text-sm text-[#6f6862] dark:text-[#c8c1b8]">
-              {recommended.fileName}
-            </p>
+        <div className="mt-10 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="flex flex-col gap-4 bg-[#f7f1e6] p-5 dark:bg-white/[0.04]">
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-['JetBrains_Mono_Variable'] text-xs uppercase tracking-[0.12em] text-[#6a625d] dark:text-[#c9c2ba]">
+                Recommended download
+              </p>
+              <Terminal className="size-5 text-[#155cff] dark:text-[#8ab2ff]" />
+            </div>
+            <div className="flex flex-col gap-2 pt-1">
+              <h3 className="text-3xl font-semibold tracking-[-0.05em]">{recommended.label}</h3>
+              <p className="font-['JetBrains_Mono_Variable'] text-sm text-[#6f6862] dark:text-[#c8c1b8]">
+                {recommended.fileName}
+              </p>
+            </div>
             <a
-              className="mt-8 inline-flex w-full items-center justify-center bg-[#155cff] px-6 py-4 font-semibold text-white transition hover:bg-[#0047e8]"
+              className="inline-flex min-h-11 w-full items-center justify-center bg-[#155cff] px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#0047e8]"
               href={recommended.href}
             >
               {recommended.id === "unknown"
@@ -47,18 +49,18 @@ export function InstallSection() {
               <Download className="ml-2 size-4" />
             </a>
 
-            <div className="mt-8 flex flex-wrap gap-2 text-sm">
+            <div className="flex flex-wrap gap-2 text-sm">
               {downloadOptions.map((option) => (
                 <a
                   key={option.id}
-                  className="bg-[#f0eadf] px-3 py-2 text-[#4d453e] hover:text-[#155cff] dark:bg-white/10 dark:text-[#d8d0c6] dark:hover:text-[#6ea0ff]"
+                  className="bg-[#efe7d8] px-3 py-2 text-[#4d453e] transition hover:bg-white hover:text-[#155cff] dark:bg-white/10 dark:text-[#d8d0c6] dark:hover:bg-white/16 dark:hover:text-[#8ab2ff]"
                   href={option.href}
                 >
                   {option.shortLabel}
                 </a>
               ))}
               <a
-                className="bg-[#f0eadf] px-3 py-2 text-[#4d453e] hover:text-[#155cff] dark:bg-white/10 dark:text-[#d8d0c6] dark:hover:text-[#6ea0ff]"
+                className="bg-[#efe7d8] px-3 py-2 text-[#4d453e] transition hover:bg-white hover:text-[#155cff] dark:bg-white/10 dark:text-[#d8d0c6] dark:hover:bg-white/16 dark:hover:text-[#8ab2ff]"
                 href={latestReleaseUrl}
               >
                 All releases
@@ -66,19 +68,19 @@ export function InstallSection() {
             </div>
 
             <a
-              className="mt-6 inline-flex items-center text-sm font-medium text-[#155cff] dark:text-[#6ea0ff]"
+              className="inline-flex items-center text-sm font-medium text-[#155cff] dark:text-[#8ab2ff]"
               href={checksumsUrl}
             >
               <ShieldCheck className="mr-2 size-4" /> Verify with checksums.txt
             </a>
 
-            <p className="mt-6 text-sm leading-6 text-[#6f6862] dark:text-[#c8c1b8]">
+            <p className="text-sm leading-6 text-[#6f6862] dark:text-[#c8c1b8]">
               Windows: download `stasium-windows-x64.exe`, rename it to `stasium.exe` if you want,
               and run it from PowerShell or place it on PATH.
             </p>
           </div>
 
-          <div className="grid gap-5">
+          <div className="grid gap-4">
             <CopyCommand label="After download on macOS/Linux" command={afterDownloadCommand} />
             <CopyCommand label="Build from source" command={sourceBuildCommand} />
           </div>

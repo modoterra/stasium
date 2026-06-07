@@ -1,5 +1,6 @@
 import { DetectsSection } from "./components/detects-section";
 import { FloatingNav } from "./components/floating-nav";
+import { Footer } from "./components/footer";
 import { Hero } from "./components/hero";
 import { InstallSection } from "./components/install-section";
 import { ManifestSection } from "./components/manifest-section";
@@ -10,7 +11,7 @@ function SiteApp() {
   const { isDark, toggleTheme } = useThemePreference();
 
   return (
-    <main className="min-h-[100svh] bg-[#f8f8f4] font-['Instrument_Sans_Variable'] text-[#211f1d] antialiased dark:bg-[#101113] dark:text-[#f7f2e8]">
+    <main className="min-h-[100svh] overflow-hidden bg-[#f2eee3] font-['Instrument_Sans_Variable'] text-[#161410] antialiased dark:bg-[#08090d] dark:text-[#f8f3e8]">
       <FloatingNav isDark={isDark} onToggleTheme={toggleTheme} />
 
       <Hero />
@@ -22,6 +23,8 @@ function SiteApp() {
       <DetectsSection />
 
       <ManifestSection />
+
+      <Footer />
     </main>
   );
 }

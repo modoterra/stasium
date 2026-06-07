@@ -7,11 +7,28 @@ export function useActiveSection(sectionIds: readonly string[]) {
   useEffect(() => {
     if (typeof IntersectionObserver === "undefined") return;
 
+    const visibleSections = new Map<string, IntersectionObserverEntry>();
+    const sectionOrder = new Map(sectionIds.map((sectionId, index) => [sectionId, index]));
+
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries
-          .filter((entry) => entry.isIntersecting)
-          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        for (const entry of entries) {
+          if (entry.isIntersecting && entry.target.id) {
+            visibleSections.set(entry.target.id, entry);
+          } else {
+            visibleSections.delete(entry.target.id);
+          }
+        }
+
+        const anchorY = window.innerHeight * 0.35;
+        const visible = [...visibleSections.values()].sort((a, b) => {
+          const distanceA = Math.abs(a.boundingClientRect.top - anchorY);
+          const distanceB = Math.abs(b.boundingClientRect.top - anchorY);
+
+          if (distanceA !== distanceB) return distanceA - distanceB;
+
+          return (sectionOrder.get(a.target.id) ?? 0) - (sectionOrder.get(b.target.id) ?? 0);
+        })[0];
 
         if (visible?.target.id) {
           setActiveSection(visible.target.id);

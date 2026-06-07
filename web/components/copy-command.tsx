@@ -18,13 +18,13 @@ export function CopyCommand({ label, command }: CopyCommandProps) {
   };
 
   return (
-    <div className="bg-[#17130f] p-4 text-left text-[#fffdf7] dark:bg-[#f4efe4] dark:text-[#11110f]">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="font-['JetBrains_Mono_Variable'] text-xs uppercase tracking-[0.12em] opacity-70">
+    <div className="overflow-hidden bg-[#111820] text-left text-[#fffdf7] dark:bg-[#111820] dark:text-[#fffdf7]">
+      <div className="flex items-center justify-between gap-3 bg-white/[0.035] px-4 py-2.5 dark:bg-white/[0.035]">
+        <p className="font-['JetBrains_Mono_Variable'] text-xs uppercase tracking-[0.12em] opacity-68">
           {label}
         </p>
         <Button
-          className="h-8 rounded-full bg-white/10 px-3 text-xs text-current hover:bg-white/20 dark:bg-black/10 dark:hover:bg-black/20"
+          className="h-7 bg-white/10 px-3 text-xs text-current [border-radius:0] hover:bg-white/18 dark:bg-white/12 dark:hover:bg-white/18"
           size="sm"
           variant="ghost"
           aria-label={copied ? `${label} copied` : `Copy ${label}`}
@@ -34,7 +34,7 @@ export function CopyCommand({ label, command }: CopyCommandProps) {
           {copied ? "Copied" : "Copy"}
         </Button>
       </div>
-      <pre className="overflow-x-auto whitespace-pre-wrap font-['JetBrains_Mono_Variable'] text-sm leading-7">
+      <pre className="overflow-x-auto whitespace-pre-wrap p-4 font-['JetBrains_Mono_Variable'] text-sm leading-6">
         <code>{command}</code>
       </pre>
     </div>
