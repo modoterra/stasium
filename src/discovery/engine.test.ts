@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { detectDiscoveryCandidates } from "./engine";
@@ -261,6 +261,121 @@ app = FastAPI()
       });
     } finally {
       await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("detects modern javascript framework strategies from package dependencies", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "stasium-discovery-engine-"));
+
+    try {
+      await Bun.write(
+        join(dir, "package.json"),
+        JSON.stringify(
+          {
+            scripts: {
+              dev: "vite --host 0.0.0.0",
+              start: "next start",
+              "start:dev": "nest start --watch",
+            },
+            dependencies: {
+              next: "^16.0.0",
+              astro: "^5.0.0",
+              "@sveltejs/kit": "^2.0.0",
+              nuxt: "^4.0.0",
+              vite: "^8.0.0",
+              vue: "^3.0.0",
+              "@angular/cli": "^21.0.0",
+              "@nestjs/core": "^11.0.0",
+            },
+          },
+          null,
+          2,
+        ),
+      );
+      await Bun.write(join(dir, "pnpm-lock.yaml"), "lockfileVersion: '9.0'\n");
+
+      const loaded = await loadDiscoveryStrategies(dir);
+      const detected = await detectDiscoveryCandidates(dir, loaded.strategies);
+      const byId = new Map(
+        detected.candidates.map((candidate) => [candidate.strategyId, candidate]),
+      );
+
+      expect(byId.get("next-app")?.service.launchInstruction).toEqual({
+        executable: "pnpm",
+        arguments: ["run", "dev"],
+      });
+      expect(byId.get("astro-app")?.service.launchInstruction).toEqual({
+        executable: "pnpm",
+        arguments: ["run", "dev"],
+      });
+      expect(byId.get("sveltekit-app")?.service.launchInstruction).toEqual({
+        executable: "pnpm",
+        arguments: ["run", "dev"],
+      });
+      expect(byId.get("nuxt-app")?.service.launchInstruction).toEqual({
+        executable: "pnpm",
+        arguments: ["run", "dev"],
+      });
+      expect(byId.get("vite-app")?.service.launchInstruction).toEqual({
+        executable: "pnpm",
+        arguments: ["run", "dev"],
+      });
+      expect(byId.get("vue-app")?.service.launchInstruction).toEqual({
+        executable: "pnpm",
+        arguments: ["run", "dev"],
+      });
+      expect(byId.get("angular-app")?.service.launchInstruction).toEqual({
+        executable: "pnpm",
+        arguments: ["run", "start"],
+      });
+      expect(byId.get("nestjs-app")?.service.launchInstruction).toEqual({
+        executable: "pnpm",
+        arguments: ["run", "start:dev"],
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("detects rails bin/dev and phoenix servers", async () => {
+    const railsDir = await mkdtemp(join(tmpdir(), "stasium-discovery-engine-"));
+    const phoenixDir = await mkdtemp(join(tmpdir(), "stasium-discovery-engine-"));
+
+    try {
+      await mkdir(join(railsDir, "config"));
+      await mkdir(join(railsDir, "bin"));
+      await Bun.write(join(railsDir, "Gemfile"), "gem 'rails'\n");
+      await Bun.write(join(railsDir, "config/application.rb"), "module App\nend\n");
+      await Bun.write(join(railsDir, "bin/rails"), "#!/usr/bin/env ruby\n");
+      await Bun.write(join(railsDir, "bin/dev"), "#!/usr/bin/env sh\n");
+
+      const railsLoaded = await loadDiscoveryStrategies(railsDir);
+      const railsDetected = await detectDiscoveryCandidates(railsDir, railsLoaded.strategies);
+      const railsById = new Map(
+        railsDetected.candidates.map((candidate) => [candidate.strategyId, candidate]),
+      );
+
+      expect(railsById.get("rails-bin-dev")?.service.launchInstruction).toEqual({
+        executable: "bin/dev",
+        arguments: [],
+      });
+      expect(railsById.has("rails-app")).toBe(true);
+
+      await Bun.write(join(phoenixDir, "mix.exs"), `def deps do\n  [{:phoenix, "~> 1.8"}]\nend\n`);
+
+      const phoenixLoaded = await loadDiscoveryStrategies(phoenixDir);
+      const phoenixDetected = await detectDiscoveryCandidates(phoenixDir, phoenixLoaded.strategies);
+      const phoenix = phoenixDetected.candidates.find(
+        (candidate) => candidate.strategyId === "phoenix-app",
+      );
+
+      expect(phoenix?.service.launchInstruction).toEqual({
+        executable: "mix",
+        arguments: ["phx.server"],
+      });
+    } finally {
+      await rm(railsDir, { recursive: true, force: true });
+      await rm(phoenixDir, { recursive: true, force: true });
     }
   });
 

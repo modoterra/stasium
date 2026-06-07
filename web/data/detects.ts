@@ -6,8 +6,14 @@ export const detectedStacks = [
   },
   {
     title: "Rails",
-    body: "Looks for Gemfile, config/application.rb, and bin/rails, then shows a Rails server command.",
-    detail: "The proposed command uses bin/rails server.",
+    body: "Looks for Gemfile and modern Rails entrypoints, then shows bin/dev or a Rails server command.",
+    detail: "Projects with bin/dev get that command; other Rails apps can use bin/rails server.",
+  },
+  {
+    title: "Modern JS frameworks",
+    body: "Looks for package clues for Next.js, Astro, SvelteKit, Nuxt, Vite, Remix, React Router, Vue, Angular, Qwik, SolidStart, TanStack Start, RedwoodJS, Expo, NestJS, and Hono.",
+    detail:
+      "Framework proposals use the first matching package script name, such as dev, start, or start:dev, with the detected package manager.",
   },
   {
     title: "Django",
@@ -18,6 +24,11 @@ export const detectedStacks = [
     title: "FastAPI",
     body: "Looks for FastAPI() in main.py or app/main.py, then shows a reloadable uvicorn command.",
     detail: "The proposed command targets main:app or app.main:app.",
+  },
+  {
+    title: "Phoenix",
+    body: "Looks for Phoenix in mix.exs, then shows the Phoenix development server.",
+    detail: "The proposed command uses mix phx.server.",
   },
   {
     title: "Node package scripts",

@@ -127,6 +127,20 @@ working_dir = "."
 depends_on_ids = ["laravel-app"]
 
 [[strategy]]
+id = "rails-bin-dev"
+label = "Rails bin/dev"
+priority = 195
+default_selected = true
+
+[strategy.when]
+all_files = ["Gemfile", "config/application.rb", "bin/dev"]
+
+[strategy.service]
+name = "app"
+command = ["bin/dev"]
+working_dir = "."
+
+[[strategy]]
 id = "rails-app"
 label = "Rails server"
 priority = 190
@@ -156,9 +170,472 @@ command = ["python", "manage.py", "runserver"]
 working_dir = "."
 
 [[strategy]]
+id = "phoenix-app"
+label = "Phoenix server"
+priority = 178
+default_selected = true
+
+[strategy.when]
+all_files = ["mix.exs"]
+any_regex = [{ file = "mix.exs", pattern = ":phoenix" }]
+
+[strategy.service]
+name = "app"
+command = ["mix", "phx.server"]
+working_dir = "."
+
+[[strategy]]
+id = "next-app"
+label = "Next.js dev server"
+priority = 177
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.next" },
+  { file = "package.json", path = "devDependencies.next" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "astro-app"
+label = "Astro dev server"
+priority = 176
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.astro" },
+  { file = "package.json", path = "devDependencies.astro" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "sveltekit-app"
+label = "SvelteKit dev server"
+priority = 175
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.@sveltejs/kit" },
+  { file = "package.json", path = "devDependencies.@sveltejs/kit" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "nuxt-app"
+label = "Nuxt dev server"
+priority = 174
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.nuxt" },
+  { file = "package.json", path = "devDependencies.nuxt" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "vite-app"
+label = "Vite dev server"
+priority = 173
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.vite" },
+  { file = "package.json", path = "devDependencies.vite" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "frontend"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "remix-app"
+label = "Remix dev server"
+priority = 172
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.@remix-run/dev" },
+  { file = "package.json", path = "devDependencies.@remix-run/dev" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "react-router-app"
+label = "React Router dev server"
+priority = 171
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.@react-router/dev" },
+  { file = "package.json", path = "devDependencies.@react-router/dev" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "vue-app"
+label = "Vue dev server"
+priority = 170
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.vue" },
+  { file = "package.json", path = "devDependencies.vue" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "frontend"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "angular-app"
+label = "Angular dev server"
+priority = 169
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.@angular/cli" },
+  { file = "package.json", path = "devDependencies.@angular/cli" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.start", "scripts.dev"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "qwik-app"
+label = "Qwik dev server"
+priority = 168
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.@builder.io/qwik-city" },
+  { file = "package.json", path = "devDependencies.@builder.io/qwik-city" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "solidstart-app"
+label = "SolidStart dev server"
+priority = 167
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.@solidjs/start" },
+  { file = "package.json", path = "devDependencies.@solidjs/start" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "tanstack-start-app"
+label = "TanStack Start dev server"
+priority = 166
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.@tanstack/react-start" },
+  { file = "package.json", path = "devDependencies.@tanstack/react-start" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "redwood-app"
+label = "RedwoodJS dev server"
+priority = 164
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.@redwoodjs/core" },
+  { file = "package.json", path = "devDependencies.@redwoodjs/core" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "expo-app"
+label = "Expo dev server"
+priority = 163
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.expo" },
+  { file = "package.json", path = "devDependencies.expo" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.start", "scripts.dev"]
+
+[strategy.service]
+name = "app"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "nestjs-app"
+label = "NestJS dev server"
+priority = 162
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.@nestjs/core" },
+  { file = "package.json", path = "devDependencies.@nestjs/core" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.start:dev", "scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "api"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
+id = "hono-app"
+label = "Hono dev server"
+priority = 161
+default_selected = true
+
+[strategy.when]
+all_files = ["package.json"]
+any_json_paths = [
+  { file = "package.json", path = "dependencies.hono" },
+  { file = "package.json", path = "devDependencies.hono" },
+]
+
+[[strategy.capture]]
+name = "package_manager"
+kind = "lockfile_package_manager"
+
+[[strategy.capture]]
+name = "script"
+kind = "json_first_existing_key"
+file = "package.json"
+paths = ["scripts.dev", "scripts.start"]
+
+[strategy.service]
+name = "api"
+command = ["${package_manager}", "run", "${script}"]
+working_dir = "."
+
+[[strategy]]
 id = "node-dev"
 label = "Node dev server"
-priority = 170
+priority = 160
 default_selected = true
 
 [strategy.when]
