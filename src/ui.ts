@@ -11,6 +11,14 @@ import {
 import type { DiscoverySelection, SelectionItem } from "./discovery";
 import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import type { FocusManager } from "./focus";
+import {
+  ProcessTreeMetricsSampler,
+  formatBytes,
+  formatCountdown,
+  formatCpuPercent,
+  formatDuration,
+  type ProcessMetricsSample,
+} from "./process-metrics";
 import { getRuntimeStatusView } from "./runtime-status";
 import type { ServiceManager, ServiceView } from "./service-manager";
 import { formatCommandSpec } from "./shared";
@@ -497,6 +505,46 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     metaText: logPanelMeta,
   } = createPanel("Logs", "logs");
 
+  const servicePanel = new BoxRenderable(renderer, {
+    id: "selected-process-panel",
+    flexShrink: 0,
+    width: "100%",
+    flexDirection: "column",
+    paddingTop: PANEL_PADDING_Y,
+    paddingBottom: PANEL_PADDING_Y,
+    paddingLeft: PANEL_PADDING_X,
+    paddingRight: PANEL_PADDING_X,
+    rowGap: PANEL_CONTENT_GAP_Y,
+    backgroundColor: palette.panel,
+  });
+
+  const serviceHeading = new BoxRenderable(renderer, {
+    flexShrink: 0,
+    width: "100%",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    columnGap: INLINE_GAP_X,
+  });
+
+  const servicePanelTitle = new TextRenderable(renderer, {
+    content: "Process",
+    fg: palette.muted,
+    wrapMode: "none",
+    truncate: true,
+  });
+
+  const servicePanelDetail = new TextRenderable(renderer, {
+    content: "—",
+    fg: palette.muted,
+    wrapMode: "none",
+    truncate: true,
+  });
+
+  serviceHeading.add(servicePanelTitle);
+  servicePanel.add(serviceHeading);
+  servicePanel.add(servicePanelDetail);
+
   const logList = new ScrollBoxRenderable(renderer, {
     id: "log-list",
     flexGrow: 1,
@@ -526,12 +574,22 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   });
   logPanel.add(logList);
 
+  const outputColumn = new BoxRenderable(renderer, {
+    flexGrow: 1,
+    minWidth: 0,
+    height: "100%",
+    flexDirection: "column",
+    rowGap: PANEL_GAP_Y,
+  });
+
   sideColumn.add(manifestPanel);
   if (externalPanel) {
     sideColumn.add(externalPanel);
   }
+  outputColumn.add(servicePanel);
+  outputColumn.add(logPanel);
   main.add(sideColumn);
-  main.add(logPanel);
+  main.add(outputColumn);
 
   const footerStack = new BoxRenderable(renderer, {
     flexShrink: 0,
@@ -764,6 +822,42 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       .filter((status) => counts.has(status))
       .map((status) => `${counts.get(status)} ${getRuntimeStatusView(status).code}`)
       .join(" · ");
+  };
+
+  const serviceDetailSegments = (): string[] => {
+    const selected = manager.getSelectedView();
+    if (!selected) return ["—"];
+
+    const status = getRuntimeStatusView(selected.runtimeStatus).code;
+    const pidInfo = selectedProcessPidInfo();
+    const pid = pidInfo?.pid ?? null;
+    const countdown =
+      selected.runtimeStatus === "retrying" ? [formatCountdown(selected.restartInMs)] : [];
+    const cpu = pid ? formatCpuPercent(selectedMetrics?.cpuPercent ?? null) : "—";
+    const mem = pid ? formatBytes(selectedMetrics?.rssBytes ?? null) : "—";
+    const up = pidInfo ? formatDuration(pidInfo.startedAt) : "—";
+    const ext = selected.lastExitCode === null ? "—" : formatExit(selected.lastExitCode);
+
+    return [
+      status,
+      ...countdown,
+      `Pid ${pid ?? "—"}`,
+      `Cpu ${cpu}`,
+      `Mem ${mem}`,
+      `Up ${up}`,
+      `Ext ${ext}`,
+      `Rst ${selected.restartCount}`,
+    ];
+  };
+
+  const rebuildServicePanel = (): void => {
+    const selected = manager.getSelectedView();
+    servicePanelTitle.content = selected ? `Process (${selected.name})` : "Process";
+    servicePanelTitle.fg = panelTitleColor("logs");
+    servicePanelDetail.content = serviceDetailSegments().join("  ");
+    servicePanelDetail.fg = selected
+      ? runtimeStatusColor(selected.runtimeStatus, palette)
+      : palette.muted;
   };
 
   const footerShortcutBackground = (hovered: boolean): string =>
@@ -1327,12 +1421,45 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   let discoverySelectionLines: TextRenderable[] = [];
   let discoveryWarningLines: TextRenderable[] = [];
   let unsubDiscoverySelection: (() => void) | null = null;
+  const metricsSampler = new ProcessTreeMetricsSampler();
+  let selectedMetrics: ProcessMetricsSample | null = null;
+  let selectedMetricsKey: string | null = null;
+  let metricsRefreshing = false;
+  const metricsTimer = setInterval(() => {
+    void refreshSelectedMetrics();
+  }, 1000);
 
   const panelTitleColor = (panel: PanelId): string =>
     focusManager.isPanelActive(panel) ? palette.accent : palette.muted;
 
   const panelBackgroundColor = (panel: PanelId): string =>
     focusManager.isPanelActive(panel) ? palette.panelActive : palette.panel;
+
+  const selectedProcessPidInfo = () => {
+    const selected = manager.getSelectedView();
+    if (!selected) return null;
+    return manager.getServicePids().find((entry) => entry.name === selected.name) ?? null;
+  };
+
+  const refreshSelectedMetrics = async (): Promise<void> => {
+    if (metricsRefreshing) return;
+    metricsRefreshing = true;
+    try {
+      const selected = manager.getSelectedView();
+      const pidInfo = selectedProcessPidInfo();
+      const key = selected && pidInfo ? `${selected.name}:${pidInfo.pid}` : null;
+      if (key !== selectedMetricsKey) {
+        selectedMetricsKey = key;
+        metricsSampler.reset();
+        selectedMetrics = null;
+      }
+
+      selectedMetrics = await metricsSampler.sample(pidInfo?.pid ?? null);
+      renderAll();
+    } finally {
+      metricsRefreshing = false;
+    }
+  };
 
   const listSelectionBackground = (): string => palette.selection;
 
@@ -1957,6 +2084,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     logPanelTitle.content = selectedLogName ? `Logs (${selectedLogName})` : "Logs";
     logPanelTitle.fg = panelTitleColor("logs");
     const logsBackground = panelBackgroundColor("logs");
+    servicePanel.backgroundColor = logsBackground;
     logPanel.backgroundColor = logsBackground;
     logList.backgroundColor = logsBackground;
     logList.wrapper.backgroundColor = logsBackground;
@@ -1988,6 +2116,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     rebuildList(views, manager.getSelectedIndex());
     rebuildExternalList();
     rebuildLogs();
+    rebuildServicePanel();
     updateHeader();
     updatePanelStyles();
     rebuildFooter();
@@ -2436,6 +2565,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   const teardown = () => {
     renderer.off("theme_mode", applyTheme);
     renderer.off("resize", applyLayout);
+    clearInterval(metricsTimer);
     unsubManager();
     unsubFocus();
     unsubscribeExternalRuntime();
