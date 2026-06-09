@@ -19,6 +19,7 @@ import {
   formatDuration,
   type ProcessMetricsSample,
 } from "./process-metrics";
+import { aggregateProcessOutput, formatProcessOutputTitle } from "./process-output-scope";
 import { getRuntimeStatusView } from "./runtime-status";
 import type { ServiceManager, ServiceView } from "./service-manager";
 import { formatCommandSpec } from "./shared";
@@ -1500,15 +1501,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       };
     }
 
-    const entries = manager
-      .getViews()
-      .flatMap((view) =>
-        view.log.all().map((entry) => ({
-          ...entry,
-          line: `[${view.name}] ${entry.line}`,
-        })),
-      )
-      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    const entries = aggregateProcessOutput(
+      manager.getViews().map((view) => ({ name: view.name, entries: view.log.all() })),
+    );
 
     return {
       entries,
@@ -2081,7 +2076,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       logSource === "external" && externalRuntimeManager
         ? externalRuntimeManager.getSelectedService()?.name
         : manager.getSelectedView()?.name;
-    logPanelTitle.content = selectedLogName ? `Logs (${selectedLogName})` : "Logs";
+    logPanelTitle.content = formatProcessOutputTitle(selectedLogName ?? null);
     logPanelTitle.fg = panelTitleColor("logs");
     const logsBackground = panelBackgroundColor("logs");
     servicePanel.backgroundColor = logsBackground;
