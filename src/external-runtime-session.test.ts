@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { ExternalRuntimeSession } from "./external-runtime";
+import { getExternalRuntimeStatus } from "./runtime-status";
 import type { ExternalManagedProcess } from "./types";
 
 describe("External Runtime Session", () => {
@@ -28,6 +29,7 @@ const process = (runtimeId: string, name: string): ExternalManagedProcess => ({
   runtimeName: runtimeId,
   name,
   state: "running",
+  runtimeStatus: getExternalRuntimeStatus("running"),
   status: "Up",
   ports: "",
 });

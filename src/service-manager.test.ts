@@ -3,6 +3,7 @@ import { ExternalRuntimeVisibilityManager, type ExternalRuntime } from "./extern
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { normalizeProcessDefinition, type ProcessDefinitionInput } from "./process-definition";
 import { ProcessClaimStore } from "./process-claim";
+import { getExternalRuntimeStatus } from "./runtime-status";
 import { ServiceManager, ServiceManagerError } from "./service-manager";
 import { planStartupDependencies } from "./startup-dependency-plan";
 import type { ExternalManagedProcess, LogEntry, ProcessDefinition, ServicePid } from "./types";
@@ -64,6 +65,7 @@ const externalProcess = (
   runtimeName: "Docker Compose",
   name,
   state,
+  runtimeStatus: getExternalRuntimeStatus(state),
   status: state,
   ports: "",
 });
@@ -112,6 +114,30 @@ describe("ServiceManager", () => {
 
     expect(manager.getSelectedIndex()).toBe(1);
     expect(manager.getSelectedConfig()?.name).toBe("worker");
+  });
+
+  test("supports deselecting the Workspace service selection", () => {
+    const manager = new ServiceManager([makeConfig("api"), makeConfig("worker")]);
+
+    expect(manager.getSelectedView()?.runtimeStatus).toBe("off");
+
+    manager.deselect();
+
+    expect(manager.getSelectedIndex()).toBe(-1);
+    expect(manager.getSelectedView()).toBeNull();
+    expect(manager.getSelectedConfig()).toBeNull();
+
+    manager.moveSelection(1);
+
+    expect(manager.getSelectedIndex()).toBe(0);
+    expect(manager.getSelectedConfig()?.name).toBe("api");
+  });
+
+  test("reports no Workspace selection for an empty manifest", () => {
+    const manager = new ServiceManager([]);
+
+    expect(manager.getSelectedIndex()).toBe(-1);
+    expect(manager.getSelectedView()).toBeNull();
   });
 
   test("starts dependencies before selected service", async () => {
@@ -368,6 +394,7 @@ describe("ServiceManager", () => {
     });
 
     expect(hasPendingRestart).toBe(true);
+    expect(manager.getSelectedView()?.runtimeStatus).toBe("retrying");
 
     const restarted = await waitFor(() => {
       const view = manager.getSelectedView();

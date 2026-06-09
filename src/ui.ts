@@ -11,9 +11,17 @@ import {
 import type { DiscoverySelection, SelectionItem } from "./discovery";
 import type { ExternalRuntimeVisibilityManager } from "./external-runtime";
 import type { FocusManager } from "./focus";
+import { getRuntimeStatusView } from "./runtime-status";
 import type { ServiceManager, ServiceView } from "./service-manager";
 import { formatCommandSpec } from "./shared";
-import type { ExternalManagedProcess, LogEntry, Manifest, PanelId, Shortcut } from "./types";
+import type {
+  ExternalManagedProcess,
+  LogEntry,
+  Manifest,
+  PanelId,
+  RuntimeStatus,
+  Shortcut,
+} from "./types";
 import { STASIUM_VERSION } from "./version";
 
 interface Palette {
@@ -106,45 +114,20 @@ const MIN_APP_WIDTH = 80;
 const MIN_APP_HEIGHT_WITH_EXTERNAL_RUNTIME = 35;
 const MIN_APP_HEIGHT_NO_EXTERNAL_RUNTIME = 28;
 
-const stateColor = (state: ServiceView["state"], palette: Palette): string => {
-  switch (state) {
-    case "RUNNING":
+const runtimeStatusColor = (status: RuntimeStatus, palette: Palette): string => {
+  switch (getRuntimeStatusView(status).severity) {
+    case "good":
       return palette.green;
-    case "STARTING":
+    case "attention":
       return palette.amber;
-    case "STOPPING":
-      return palette.amber;
-    case "FAILED":
+    case "bad":
       return palette.red;
-    default:
+    case "muted":
       return palette.muted;
   }
 };
 
-const externalProcessStateColor = (
-  state: ExternalManagedProcess["state"],
-  palette: Palette,
-): string => {
-  switch (state) {
-    case "running":
-      return palette.green;
-    case "restarting":
-      return palette.amber;
-    case "paused":
-      return palette.amber;
-    case "exited":
-      return palette.red;
-    case "dead":
-      return palette.red;
-    default:
-      return palette.muted;
-  }
-};
-
-const formatState = (state: ServiceView["state"]) => state.padEnd(8, " ");
-
-const formatExternalProcessState = (state: ExternalManagedProcess["state"]) =>
-  state.padEnd(10, " ");
+const formatRuntimeStatus = (status: RuntimeStatus) => getRuntimeStatusView(status).code;
 
 const formatExit = (exit: number | null) => {
   if (exit === null) return "--";
@@ -168,24 +151,28 @@ const padRight = (value: string, width: number): string => {
 
 const formatManifestLine = (view: ServiceView, selected: boolean, rowWidth: number): string => {
   if (rowWidth <= 0) return "";
-  const prefix = selected ? ">" : " ";
-  const status = formatState(view.state);
+  const prefix = selected ? "┃" : " ";
+  const status = formatRuntimeStatus(view.runtimeStatus);
   const meta =
     view.restartInMs !== null
-      ? `retry:${Math.ceil(view.restartInMs)}ms rst:${view.restartCount}`
-      : `exit:${formatExit(view.lastExitCode)} rst:${view.restartCount}`;
+      ? `${Math.ceil(view.restartInMs)}ms`
+      : view.lastExitCode !== null && view.lastExitCode !== 0
+        ? `Ext ${formatExit(view.lastExitCode)}`
+        : view.restartCount > 0
+          ? `Rst ${view.restartCount}`
+          : "";
 
-  const baseWidth = 2 + status.length + 1;
-  const metaWidth = rowWidth >= 56 ? 22 : rowWidth >= 46 ? 16 : 0;
+  const baseWidth = 2 + status.length + 2;
+  const metaWidth = rowWidth >= 56 ? 12 : rowWidth >= 46 ? 8 : 0;
   const nameWidth = Math.max(4, rowWidth - baseWidth - (metaWidth > 0 ? metaWidth + 1 : 0));
   const name = padRight(view.name, nameWidth);
 
-  if (metaWidth > 0) {
-    const right = padRight(meta, metaWidth);
-    return `${prefix} ${status} ${name} ${right}`.slice(0, rowWidth);
+  if (metaWidth > 0 && meta) {
+    const right = truncateText(meta, metaWidth).padStart(metaWidth, " ");
+    return `${prefix} ${status}  ${name} ${right}`.slice(0, rowWidth);
   }
 
-  return `${prefix} ${status} ${name}`.slice(0, rowWidth);
+  return `${prefix} ${status}  ${name}`.slice(0, rowWidth);
 };
 
 const formatExternalProcessLine = (
@@ -195,20 +182,20 @@ const formatExternalProcessLine = (
 ): string => {
   if (rowWidth <= 0) return "";
   const prefix = selected ? ">" : " ";
-  const status = formatExternalProcessState(service.state);
+  const status = formatRuntimeStatus(service.runtimeStatus);
   const meta = service.ports ? `ports:${service.ports}` : service.status;
 
-  const baseWidth = 2 + status.length + 1;
+  const baseWidth = 2 + status.length + 2;
   const metaWidth = rowWidth >= 52 ? 18 : rowWidth >= 42 ? 12 : 0;
   const nameWidth = Math.max(4, rowWidth - baseWidth - (metaWidth > 0 ? metaWidth + 1 : 0));
   const name = padRight(service.name, nameWidth);
 
   if (metaWidth > 0) {
     const right = padRight(meta, metaWidth);
-    return `${prefix} ${status} ${name} ${right}`.slice(0, rowWidth);
+    return `${prefix} ${status}  ${name} ${right}`.slice(0, rowWidth);
   }
 
-  return `${prefix} ${status} ${name}`.slice(0, rowWidth);
+  return `${prefix} ${status}  ${name}`.slice(0, rowWidth);
 };
 
 const ensureIndexVisible = (box: ScrollBoxRenderable, index: number): void => {
@@ -607,6 +594,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     "switch panel": "switch",
     "next field": "next",
     follow: "tail",
+    scope: "scope",
+    "all logs": "all logs",
+    "service logs": "svc logs",
     discover: "scan",
     "manifest panel": "manifest",
     "external panel": "external",
@@ -618,6 +608,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     start: 90,
     stop: 90,
     restart: 85,
+    scope: 82,
+    "all logs": 82,
+    "service logs": 82,
     select: 80,
     scroll: 80,
     page: 75,
@@ -678,11 +671,16 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   };
 
   const getFooterLayout = () => {
-    const shortcuts = logsPanelVisible
+    const baseShortcuts = logsPanelVisible
       ? focusManager.getShortcuts()
       : focusManager
           .getShortcuts()
           .filter((shortcut) => shortcut.label !== "log page" && shortcut.label !== "log jump");
+    const shortcuts = baseShortcuts.map((shortcut) =>
+      shortcut.label === "scope"
+        ? { ...shortcut, label: manager.getSelectedView() ? "all logs" : "service logs" }
+        : shortcut,
+    );
     const available = Math.max(0, renderer.width - 30);
 
     if (measureFooterWidth(shortcuts, "full") <= available) {
@@ -746,6 +744,28 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     return palette.muted;
   };
 
+  const statusSummaryOrder: RuntimeStatus[] = [
+    "errored",
+    "retrying",
+    "blocked",
+    "starting",
+    "stopping",
+    "off",
+    "paused",
+    "unknown",
+    "running",
+  ];
+
+  const formatStatusSummary = (statuses: RuntimeStatus[], emptyLabel: string): string => {
+    if (statuses.length === 0) return emptyLabel;
+    const counts = new Map<RuntimeStatus, number>();
+    for (const status of statuses) counts.set(status, (counts.get(status) ?? 0) + 1);
+    return statusSummaryOrder
+      .filter((status) => counts.has(status))
+      .map((status) => `${counts.get(status)} ${getRuntimeStatusView(status).code}`)
+      .join(" · ");
+  };
+
   const footerShortcutBackground = (hovered: boolean): string =>
     hovered ? palette.hover : "transparent";
 
@@ -759,12 +779,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   const buildHeaderStatus = (): Array<{ content: string; fg: string; panel?: PanelId }> => {
     const views = manager.getViews();
-    const running = views.filter((view) => view.state === "RUNNING").length;
-    const failed = views.filter((view) => view.state === "FAILED").length;
-    const stopped = views.filter((view) => view.state === "STOPPED").length;
+    const manifestStatuses = views.map((view) => view.runtimeStatus);
+    const running = manifestStatuses.filter((status) => status === "running").length;
+    const failed = manifestStatuses.filter((status) => status === "errored").length;
     const segments: Array<{ content: string; fg: string; panel?: PanelId }> = [
       {
-        content: `${running}/${views.length} svc`,
+        content: formatStatusSummary(manifestStatuses, "Add a service"),
         fg: summaryColor(running, views.length, failed),
         panel: "manifest",
       },
@@ -772,40 +792,17 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
     if (hasExternalRuntime && externalRuntimeManager) {
       const externalProcesses = externalRuntimeManager.getProcesses();
-      const externalRunning = externalProcesses.filter(
-        (process) => process.state === "running",
-      ).length;
-      const externalStopped = externalProcesses.filter(
-        (service) => service.state === "dead" || service.state === "exited",
-      ).length;
+      const externalStatuses = externalProcesses.map((process) => process.runtimeStatus);
+      const externalRunning = externalStatuses.filter((status) => status === "running").length;
+      const externalErrored = externalStatuses.filter((status) => status === "errored").length;
 
       segments.push({
-        content: `${externalRunning}/${externalProcesses.length} external`,
-        fg: summaryColor(externalRunning, externalProcesses.length, externalStopped),
-        panel: "external",
-      });
-
-      segments.push({
-        content: `${externalStopped} stopped`,
-        fg: externalStopped > 0 ? palette.red : palette.muted,
+        content: `external ${formatStatusSummary(externalStatuses, "0 services")}`,
+        fg: summaryColor(externalRunning, externalProcesses.length, externalErrored),
         panel: "external",
       });
 
       return segments;
-    }
-
-    segments.push({
-      content: `${stopped} stopped`,
-      fg: stopped > 0 ? palette.amber : palette.muted,
-      panel: "logs",
-    });
-
-    if (failed > 0) {
-      segments.push({
-        content: `${failed} failed`,
-        fg: palette.red,
-        panel: "logs",
-      });
     }
 
     return segments;
@@ -880,22 +877,26 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     const activeLogName =
       logSource === "external"
         ? (selectedExternalProcess?.name ?? "external")
-        : (selectedManifest?.name ?? "service");
+        : (selectedManifest?.name ?? "all");
     const tailState = logsFollowTail ? "tail:on" : "tail:paused";
-    const manifestState = selectedManifest?.state.toLowerCase() ?? "none";
-    const externalProcessState = selectedExternalProcess?.state ?? "none";
+    const manifestStatus = selectedManifest
+      ? getRuntimeStatusView(selectedManifest.runtimeStatus)
+      : null;
+    const externalProcessStatus = selectedExternalProcess
+      ? getRuntimeStatusView(selectedExternalProcess.runtimeStatus)
+      : null;
 
     const segments = [
       { content: `layout:${formatVisiblePanels(visiblePanels)}`, fg: palette.secondary },
       { content: `panel:${panelName(activePanel)}`, fg: panelTitleColor(activePanel) },
       {
-        content: `svc:${selectedManifest?.name ?? "-"} (${manifestState})`,
-        fg: selectedManifest ? stateColor(selectedManifest.state, palette) : palette.muted,
+        content: `svc:${selectedManifest?.name ?? "-"} (${manifestStatus?.label ?? "none"})`,
+        fg: manifestStatus ? runtimeStatusColor(manifestStatus.status, palette) : palette.muted,
       },
       {
-        content: `external:${selectedExternalProcess?.name ?? "-"} (${externalProcessState})`,
-        fg: selectedExternalProcess
-          ? externalProcessStateColor(selectedExternalProcess.state, palette)
+        content: `external:${selectedExternalProcess?.name ?? "-"} (${externalProcessStatus?.label ?? "none"})`,
+        fg: externalProcessStatus
+          ? runtimeStatusColor(externalProcessStatus.status, palette)
           : palette.muted,
       },
       {
@@ -1358,6 +1359,37 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   const getLogEntryKey = (entry: LogEntry, index: number): string =>
     `${entry.timestamp}:${entry.stream}:${index}:${entry.line}`;
 
+  const getManifestLogTarget = (): {
+    entries: LogEntry[];
+    version: number;
+    name: string | null;
+  } => {
+    const selected = manager.getSelectedView();
+    if (selected) {
+      return {
+        entries: selected.log.all(),
+        version: selected.log.getVersion(),
+        name: selected.name,
+      };
+    }
+
+    const entries = manager
+      .getViews()
+      .flatMap((view) =>
+        view.log.all().map((entry) => ({
+          ...entry,
+          line: `[${view.name}] ${entry.line}`,
+        })),
+      )
+      .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+
+    return {
+      entries,
+      version: manager.getViews().reduce((sum, view) => sum + view.log.getVersion(), 0),
+      name: null,
+    };
+  };
+
   const listRowBackground = (panel: PanelId, selected: boolean, hovered: boolean): string => {
     if (selected) return listSelectionBackground();
     if (hovered) return listHoverBackground();
@@ -1424,11 +1456,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
 
   const getActiveLogEntries = (): LogEntry[] => {
     const source = logSource === "external" && externalRuntimeManager ? "external" : "manifest";
-    const buffer =
-      source === "external"
-        ? (externalRuntimeManager?.getActiveLogBuffer() ?? null)
-        : (manager.getSelectedView()?.log ?? null);
-    return buffer?.all() ?? [];
+    if (source === "external") return externalRuntimeManager?.getActiveLogBuffer()?.all() ?? [];
+    return getManifestLogTarget().entries;
   };
 
   const moveLogSelection = (delta: number): void => {
@@ -1713,6 +1742,21 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
   };
 
   const rebuildList = (views: ServiceView[], selectedIndex: number) => {
+    if (views.length === 0) {
+      listLines = syncRows(manifestList, listLines, 1, "service");
+      const line = listLines[0];
+      if (line) {
+        line.content = "No Process Definitions yet. Press a to add or i to discover.";
+        line.fg = palette.muted;
+        line.bg = panelBackgroundColor("manifest");
+        line.onMouseDown = undefined;
+        line.onMouseOver = undefined;
+        line.onMouseOut = undefined;
+      }
+      manifestPanelMeta.content = "Add a service";
+      return;
+    }
+
     listLines = syncRows(manifestList, listLines, views.length, "service");
     const viewportWidth = Math.floor(manifestList.viewport.width);
     const rowWidth = Math.max(20, viewportWidth > 0 ? viewportWidth - 1 : 48);
@@ -1721,8 +1765,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       const selected = index === selectedIndex;
       const line = listLines[index];
       if (!line) return;
+      const status = view.runtimeStatus;
       line.content = formatManifestLine(view, selected, rowWidth);
-      line.fg = selected ? palette.active : stateColor(view.state, palette);
+      line.fg = runtimeStatusColor(status, palette);
       line.bg = listRowBackground("manifest", selected, index === hoveredManifestIndex);
       line.onMouseDown = (event) => {
         event.stopPropagation();
@@ -1734,7 +1779,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       };
     });
 
-    manifestPanelMeta.content = `${views.filter((view) => view.state === "RUNNING").length}/${views.length} running`;
+    manifestPanelMeta.content = formatStatusSummary(
+      views.map((view) => view.runtimeStatus),
+      "Add a service",
+    );
     ensureIndexVisible(manifestList, selectedIndex);
   };
 
@@ -1752,8 +1800,9 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       const selected = index === selectedIdx;
       const line = externalLines[index];
       if (!line) return;
+      const status = service.runtimeStatus;
       line.content = formatExternalProcessLine(service, selected, rowWidth);
-      line.fg = selected ? palette.active : externalProcessStateColor(service.state, palette);
+      line.fg = runtimeStatusColor(status, palette);
       line.bg = listRowBackground("external", selected, index === hoveredExternalIndex);
       line.onMouseDown = (event) => {
         event.stopPropagation();
@@ -1765,9 +1814,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       };
     });
 
-    externalPanelMeta.content = `${services.filter((service) => service.state === "running").length}/${
-      services.length
-    } running`;
+    externalPanelMeta.content = formatStatusSummary(
+      services.map((service) => service.runtimeStatus),
+      "0 services",
+    );
     ensureIndexVisible(externalList, selectedIdx);
   };
 
@@ -1777,11 +1827,10 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
       source === "external"
         ? (externalRuntimeManager?.getSelectedIndex() ?? 0)
         : manager.getSelectedIndex();
-    const buffer =
-      source === "external"
-        ? (externalRuntimeManager?.getActiveLogBuffer() ?? null)
-        : (manager.getSelectedView()?.log ?? null);
-    const version = buffer ? buffer.getVersion() : 0;
+    const manifestLogTarget = source === "manifest" ? getManifestLogTarget() : null;
+    const externalLogBuffer =
+      source === "external" ? (externalRuntimeManager?.getActiveLogBuffer() ?? null) : null;
+    const version = manifestLogTarget?.version ?? externalLogBuffer?.getVersion() ?? 0;
 
     if (
       version === lastLogVersion &&
@@ -1801,7 +1850,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     lastSelectedIndex = selectedIndex;
     lastLogSource = source;
 
-    const entries = buffer?.all() ?? [];
+    const entries = manifestLogTarget?.entries ?? externalLogBuffer?.all() ?? [];
     const entryKeys = new Set(entries.map((entry, index) => getLogEntryKey(entry, index)));
     if (hoveredLogEntryKey && !entryKeys.has(hoveredLogEntryKey)) hoveredLogEntryKey = null;
     if (selectedLogEntryKey && !entryKeys.has(selectedLogEntryKey)) selectedLogEntryKey = null;
@@ -1893,7 +1942,7 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     }
 
     const selected = manager.getSelectedView();
-    logPanelMeta.content = `${selected?.name ?? "service"}  lines:${entries.length}  show:${visibleStart}-${visibleEnd}  ${logsFollowTail ? "tail:on" : "tail:off"}  scroll:${scroll}%`;
+    logPanelMeta.content = `${selected?.name ?? "all services"}  lines:${entries.length}  show:${visibleStart}-${visibleEnd}  ${logsFollowTail ? "tail:on" : "tail:off"}  scroll:${scroll}%`;
   };
 
   const updatePanelStyles = () => {
@@ -1901,7 +1950,11 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     manifestPanelTitle.fg = panelTitleColor("manifest");
     manifestPanel.backgroundColor = panelBackgroundColor("manifest");
 
-    logPanelTitle.content = "Logs";
+    const selectedLogName =
+      logSource === "external" && externalRuntimeManager
+        ? externalRuntimeManager.getSelectedService()?.name
+        : manager.getSelectedView()?.name;
+    logPanelTitle.content = selectedLogName ? `Logs (${selectedLogName})` : "Logs";
     logPanelTitle.fg = panelTitleColor("logs");
     const logsBackground = panelBackgroundColor("logs");
     logPanel.backgroundColor = logsBackground;
@@ -2361,9 +2414,12 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
         return;
       }
 
-      const view = manager.getSelectedView();
-      if (view) {
-        view.log.clear();
+      const selectedView = manager.getSelectedView();
+      const views = selectedView ? [selectedView] : manager.getViews();
+      if (views.length > 0) {
+        for (const view of views) {
+          view.log.clear();
+        }
         resetLogInteraction();
         lastLogVersion = -1;
         lastSelectedIndex = -1;

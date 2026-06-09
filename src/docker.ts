@@ -4,6 +4,7 @@ import type {
   ExternalRuntimeAdapter,
   ExternalRuntimeOutputStream,
 } from "./external-runtime";
+import { getExternalRuntimeStatus } from "./runtime-status";
 import { fileExists } from "./shared";
 import type { ExternalManagedProcess, ExternalManagedProcessState, LogEntry } from "./types";
 
@@ -194,11 +195,13 @@ class DockerComposeExternalRuntime implements ExternalRuntime {
     return getStableDockerServiceNames(configServices, entryOrder).map((name) => {
       const list = entriesByService.get(name) ?? [];
       if (list.length === 0) {
+        const state = "created";
         return {
           runtimeId: this.id,
           runtimeName: this.name,
           name,
-          state: "created",
+          state,
+          runtimeStatus: getExternalRuntimeStatus(state),
           status: "",
           ports: "",
         };
@@ -213,6 +216,7 @@ class DockerComposeExternalRuntime implements ExternalRuntime {
         runtimeName: this.name,
         name,
         state,
+        runtimeStatus: getExternalRuntimeStatus(state),
         status: representative?.Status ?? "",
         ports: representative?.Ports ?? "",
       };

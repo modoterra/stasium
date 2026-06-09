@@ -5,6 +5,7 @@ import {
   type ExternalRuntime,
   type ExternalRuntimeAdapter,
 } from "./external-runtime";
+import { getExternalRuntimeStatus } from "./runtime-status";
 import type { ExternalManagedProcess, LogEntry } from "./types";
 
 describe("detectExternalRuntimes", () => {
@@ -236,6 +237,7 @@ const process = (
   runtimeName: runtimeId,
   name,
   state,
+  runtimeStatus: getExternalRuntimeStatus(state),
   status: "Up",
   ports: "",
 });

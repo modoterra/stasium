@@ -10,6 +10,7 @@ const MANIFEST_SHORTCUTS: Shortcut[] = [
   { key: "i", label: "discover" },
   { key: "d", label: "delete" },
   { key: "e", label: "edit" },
+  { key: "space", label: "scope" },
   { key: "up/down", label: "select" },
 ];
 
