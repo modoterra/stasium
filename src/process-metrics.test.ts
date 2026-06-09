@@ -67,6 +67,25 @@ describe("ProcessTreeMetricsSampler", () => {
 
     expect(await sampler.sample(20)).toMatchObject({ pid: 20, cpuPercent: null });
   });
+
+  test("calculates CPU deltas per surviving process when children exit", async () => {
+    const sampler = new ProcessTreeMetricsSampler(
+      reader(
+        [
+          [
+            { pid: 10, parentPid: 1, totalCpuTicks: 100, rssPages: 10 },
+            { pid: 11, parentPid: 10, totalCpuTicks: 500, rssPages: 5 },
+          ],
+          [{ pid: 10, parentPid: 1, totalCpuTicks: 130, rssPages: 11 }],
+        ],
+        [0, 1000, 2000],
+      ),
+    );
+
+    await sampler.sample(10);
+
+    expect(await sampler.sample(10)).toMatchObject({ cpuPercent: 30 });
+  });
 });
 
 describe("process metric formatting", () => {

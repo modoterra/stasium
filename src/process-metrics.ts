@@ -27,6 +27,7 @@ export interface ProcessStat {
 
 interface ProcessMetricsSnapshot {
   totalCpuTicks: number;
+  cpuTicksByPid: Map<number, number>;
   rssBytes: number;
   sampledAt: number;
 }
@@ -75,7 +76,7 @@ export class ProcessTreeMetricsSampler {
       return { pid, cpuPercent: null, rssBytes: snapshot.rssBytes, sampledAt: snapshot.sampledAt };
     }
 
-    const cpuTicks = Math.max(0, snapshot.totalCpuTicks - previous.totalCpuTicks);
+    const cpuTicks = this.changedCpuTicks(previous, snapshot);
     const cpuSeconds = cpuTicks / this.reader.clockTicksPerSecond;
     const elapsedSeconds = elapsedMs / 1000;
     const cpuPercent = (cpuSeconds / elapsedSeconds) * 100;
@@ -89,9 +90,23 @@ export class ProcessTreeMetricsSampler {
 
     return {
       totalCpuTicks: stats.reduce((sum, stat) => sum + stat.totalCpuTicks, 0),
+      cpuTicksByPid: new Map(stats.map((stat) => [stat.pid, stat.totalCpuTicks])),
       rssBytes: stats.reduce((sum, stat) => sum + stat.rssPages * this.reader.pageSizeBytes, 0),
       sampledAt: this.reader.now(),
     };
+  }
+
+  private changedCpuTicks(
+    previous: ProcessMetricsSnapshot,
+    current: ProcessMetricsSnapshot,
+  ): number {
+    let changed = 0;
+    for (const [pid, currentTicks] of current.cpuTicksByPid.entries()) {
+      const previousTicks = previous.cpuTicksByPid.get(pid);
+      if (previousTicks === undefined) continue;
+      changed += Math.max(0, currentTicks - previousTicks);
+    }
+    return changed;
   }
 
   private async readProcessTree(rootPid: number): Promise<ProcessStat[]> {

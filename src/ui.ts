@@ -2148,6 +2148,8 @@ export const buildUi = (opts: UiOptions): { teardown: () => void; controls: UiCo
     }
     sideColumn.visible = sidePanelsVisible;
     logsPanelVisible = nextLogsPanelVisible;
+    outputColumn.visible = logsPanelVisible;
+    servicePanel.visible = logsPanelVisible;
     logPanel.visible = logsPanelVisible;
 
     focusManager.ensureActivePanelVisible(getRenderedPanels());
