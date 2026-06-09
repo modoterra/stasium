@@ -30,6 +30,7 @@ describe("runtime status", () => {
     expect(getExternalRuntimeStatus("restarting")).toBe("retrying");
     expect(getExternalRuntimeStatus("dead")).toBe("errored");
     expect(getExternalRuntimeStatus("paused")).toBe("paused");
+    expect(getExternalRuntimeStatus("created")).toBe("off");
     expect(getExternalRuntimeStatus("exited")).toBe("off");
     expect(getExternalRuntimeStatus("unknown")).toBe("unknown");
   });
