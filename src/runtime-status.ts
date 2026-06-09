@@ -63,6 +63,7 @@ export const getExternalRuntimeStatus = (state: ExternalManagedProcessState): Ru
     case "dead":
       return "errored";
     case "created":
+      return "off";
     case "removing":
       return "starting";
     case "exited":
