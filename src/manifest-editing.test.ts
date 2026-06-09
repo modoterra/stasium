@@ -12,6 +12,7 @@ import {
 import { loadManifest, renderServiceBlock, saveManifest } from "./manifest";
 import { normalizeProcessDefinition } from "./process-definition";
 import { ProcessClaimStore } from "./process-claim";
+import { getExternalRuntimeStatus } from "./runtime-status";
 import { ServiceManager } from "./service-manager";
 import type { ExternalManagedProcess } from "./types";
 
@@ -53,6 +54,7 @@ const externalProcess = (name = "db"): ExternalManagedProcess => ({
   runtimeName: "Docker Compose",
   name,
   state: "running",
+  runtimeStatus: getExternalRuntimeStatus("running"),
   status: "running",
   ports: "",
 });

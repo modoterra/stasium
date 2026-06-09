@@ -160,6 +160,13 @@ const setupKeybindings = (
       case "i":
         await openDiscovery();
         break;
+      case "space":
+        if (manager.getSelectedView()) {
+          manager.deselect();
+        } else if (manager.getViews().length > 0) {
+          manager.setSelectedIndex(0);
+        }
+        break;
       case "d": {
         const view = manager.getSelectedView();
         if (view) {
@@ -418,6 +425,15 @@ const setupKeybindings = (
       }
       case "select":
         manager.moveSelection(1);
+        return;
+      case "scope":
+      case "all logs":
+      case "service logs":
+        if (manager.getSelectedView()) {
+          manager.deselect();
+        } else if (manager.getViews().length > 0) {
+          manager.setSelectedIndex(0);
+        }
         return;
       default:
         return;

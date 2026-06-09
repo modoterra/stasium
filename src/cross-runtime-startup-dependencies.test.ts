@@ -7,6 +7,7 @@ import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { addProcessDefinition } from "./manifest-editing";
 import { loadManifest, saveManifest } from "./manifest";
 import { ProcessClaimStore } from "./process-claim";
+import { getExternalRuntimeStatus } from "./runtime-status";
 import { ServiceManager } from "./service-manager";
 import { normalizeProcessDefinition } from "./process-definition";
 import type { ExternalManagedProcess, LogEntry, ServicePid } from "./types";
@@ -19,6 +20,7 @@ const externalProcess = (
   runtimeName: "Docker Compose",
   name,
   state,
+  runtimeStatus: getExternalRuntimeStatus(state),
   status: state,
   ports: "",
 });

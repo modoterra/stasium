@@ -8,14 +8,16 @@ import { LogBuffer } from "./log-buffer";
 import { LaunchInstructionExecutionAdapter } from "./launch-execution";
 import { ProcessOutputStore } from "./process-output-store";
 import { ProcessClaimStore } from "./process-claim";
+import { getDirectManagedRuntimeStatus } from "./runtime-status";
 import { type ServiceEvent, ServiceProcess } from "./service";
 import { ServiceGraphError } from "./service-graph";
 import { StartupDependencyPlanError, planStartupDependencies } from "./startup-dependency-plan";
-import type { ProcessDefinition, ServicePid, ServiceState } from "./types";
+import type { ProcessDefinition, RuntimeStatus, ServicePid, ServiceState } from "./types";
 
 export interface ServiceView {
   name: string;
   state: ServiceState;
+  runtimeStatus: RuntimeStatus;
   lastExitCode: number | null;
   restartCount: number;
   manualRestartCount: number;
@@ -73,9 +75,11 @@ export class ServiceManager {
     this.services = configs.map(
       (config) => new ServiceProcess(config, this.launchAdapter, this.processClaimStore),
     );
+    this.selectedIndex = configs.length === 0 ? -1 : 0;
     this.views = this.services.map((service) => ({
       name: service.config.name,
       state: "STOPPED",
+      runtimeStatus: "off",
       lastExitCode: null,
       restartCount: 0,
       manualRestartCount: 0,
@@ -104,11 +108,15 @@ export class ServiceManager {
   }
 
   setSelectedIndex(index: number): void {
-    const max = Math.max(0, this.views.length - 1);
-    const next = Math.min(Math.max(index, 0), max);
+    const max = this.views.length - 1;
+    const next = this.views.length === 0 ? -1 : Math.min(Math.max(index, -1), max);
     if (next === this.selectedIndex) return;
     this.selectedIndex = next;
     this.notify();
+  }
+
+  deselect(): void {
+    this.setSelectedIndex(-1);
   }
 
   moveSelection(delta: number): void {
@@ -234,6 +242,7 @@ export class ServiceManager {
       throw new ServiceManagerError(`Service name already exists: ${config.name}`);
     }
 
+    const wasEmpty = this.views.length === 0;
     this.assertValidConfigGraph([...this.getConfigs(), config]);
 
     const process = new ServiceProcess(config, this.launchAdapter, this.processClaimStore);
@@ -241,6 +250,7 @@ export class ServiceManager {
     this.views.push({
       name: config.name,
       state: "STOPPED",
+      runtimeStatus: "off",
       lastExitCode: null,
       restartCount: 0,
       manualRestartCount: 0,
@@ -250,6 +260,7 @@ export class ServiceManager {
     });
     this.lifecycles.set(process, this.createLifecycle(process));
     this.unsubscribers.push(this.subscribeService(process));
+    if (wasEmpty) this.selectedIndex = 0;
 
     await this.forEachResolvedService(this.getStartOrderForService(config.name), async (next) => {
       await this.startServiceUnlessBlocked(next);
@@ -259,7 +270,7 @@ export class ServiceManager {
   }
 
   async removeSelected(): Promise<boolean> {
-    if (this.services.length === 0) return false;
+    if (this.services.length === 0 || this.selectedIndex === -1) return false;
     const index = this.selectedIndex;
     const service = this.services[index];
     if (!service) return false;
@@ -273,11 +284,10 @@ export class ServiceManager {
     this.services.splice(index, 1);
     this.views.splice(index, 1);
 
-    if (this.selectedIndex >= this.views.length && this.views.length > 0) {
-      this.selectedIndex = this.views.length - 1;
-    }
     if (this.views.length === 0) {
-      this.selectedIndex = 0;
+      this.selectedIndex = -1;
+    } else if (this.selectedIndex >= this.views.length) {
+      this.selectedIndex = this.views.length - 1;
     }
 
     this.notify();
@@ -307,6 +317,7 @@ export class ServiceManager {
       view.name = config.name;
       view.config = config;
       view.state = "STOPPED";
+      view.runtimeStatus = "off";
       view.lastExitCode = null;
       view.restartInMs = null;
       view.log.clear();
@@ -343,6 +354,7 @@ export class ServiceManager {
         view.restartInMs = null;
         this.getLifecycle(service)?.noteRunning();
       }
+      this.updateRuntimeStatus(view);
       this.notifyProcessChange();
     } else if (event.type === "log") {
       view.log.add(event.entry);
@@ -352,6 +364,7 @@ export class ServiceManager {
       lifecycle?.noteExit(view, event.code);
       if (lifecycle?.hasPendingRestart()) this.startRestartTicker();
       view.lastExitCode = event.code;
+      this.updateRuntimeStatus(view);
       this.notifyProcessChange();
     }
 
@@ -434,6 +447,10 @@ export class ServiceManager {
     return this.views[index] ?? null;
   }
 
+  private updateRuntimeStatus(view: ServiceView): void {
+    view.runtimeStatus = getDirectManagedRuntimeStatus(view.state, view.restartInMs);
+  }
+
   private async startService(
     service: ServiceProcess,
     options: { resetAttempts: boolean } = { resetAttempts: true },
@@ -441,6 +458,7 @@ export class ServiceManager {
     const view = this.getViewByService(service);
     if (view) {
       view.restartInMs = null;
+      this.updateRuntimeStatus(view);
     }
 
     const lifecycle = this.getLifecycle(service);
@@ -501,7 +519,10 @@ export class ServiceManager {
 
   private clearServiceRuntimeState(service: ServiceProcess): void {
     const view = this.getViewByService(service);
-    if (view) this.getLifecycle(service)?.clearRuntimeState(view);
+    if (view) {
+      this.getLifecycle(service)?.clearRuntimeState(view);
+      this.updateRuntimeStatus(view);
+    }
   }
 
   private startRestartTicker(): void {
@@ -510,6 +531,9 @@ export class ServiceManager {
     this.restartTicker = setInterval(() => {
       const now = Date.now();
       const changed = this.lifecycles.tick((service) => this.getViewByService(service), now);
+      if (changed) {
+        for (const view of this.views) this.updateRuntimeStatus(view);
+      }
 
       if (!this.lifecycles.hasPendingRestart()) {
         this.stopRestartTicker();
@@ -529,7 +553,10 @@ export class ServiceManager {
 
   private async stopService(service: ServiceProcess): Promise<void> {
     const view = this.getViewByService(service);
-    if (view) this.getLifecycle(service)?.suppressRestart(view);
+    if (view) {
+      this.getLifecycle(service)?.suppressRestart(view);
+      this.updateRuntimeStatus(view);
+    }
     if (!service.isRunning()) return;
 
     await service.stop();

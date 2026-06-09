@@ -2,6 +2,17 @@ export type RestartPolicy = "never" | "on-failure" | "always";
 
 export type ServiceState = "STOPPED" | "STARTING" | "RUNNING" | "FAILED" | "STOPPING" | "BLOCKED";
 
+export type RuntimeStatus =
+  | "running"
+  | "retrying"
+  | "errored"
+  | "blocked"
+  | "starting"
+  | "stopping"
+  | "off"
+  | "paused"
+  | "unknown";
+
 export type CommandSpec = string | string[];
 
 export interface LaunchInstruction {
@@ -76,6 +87,7 @@ export interface ExternalManagedProcess {
   runtimeName: string;
   name: string;
   state: ExternalManagedProcessState;
+  runtimeStatus: RuntimeStatus;
   status: string;
   ports: string;
 }

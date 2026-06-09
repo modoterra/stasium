@@ -38,17 +38,16 @@ For multiple issues, repeat both steps for each issue. Do not leave newly create
 
 Use the `Status` field in the `Stasium` Project to show workflow state:
 
-| Status            | Use when                                             |
-| ----------------- | ---------------------------------------------------- |
-| `Needs triage`    | New or unclassified item                             |
-| `Needs info`      | Waiting on reporter, owner, or product clarification |
-| `Ready for agent` | Fully specified and safe for an AFK coding agent     |
-| `Ready for human` | Requires human judgment or implementation            |
-| `In progress`     | Actively owned work                                  |
-| `Done`            | Completed or merged work                             |
-| `Won't fix`       | Closed as intentionally not actioned                 |
+| Status           | Use when                                               |
+| ---------------- | ------------------------------------------------------ |
+| `Todo`           | Queued for delivery                                    |
+| `In Progress`    | Actively owned work                                    |
+| `In Review`      | PR exists and is awaiting review or checks             |
+| `Ready to Merge` | PR is self-reviewed and all agent-runnable checks pass |
+| `Done`           | Completed or merged work                               |
+| `Blocked`        | Delivery cannot continue until a blocker is resolved   |
 
-When creating issues from a PRD or plan, set `Ready for agent` only if the issue is independently grabbable and has enough acceptance criteria. Otherwise set `Needs triage` or `Needs info`.
+When creating issues from a PRD or plan, apply the `ready-for-agent` label only if the issue is independently grabbable and has enough acceptance criteria. Otherwise apply `needs-triage` or `needs-info`. Use Project `Status` for delivery progress only.
 
 To set a Project item status, fetch the Project item ID and option IDs, then update the `Status` field:
 

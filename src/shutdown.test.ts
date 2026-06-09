@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { ExternalRuntimeVisibilityManager, type ExternalRuntime } from "./external-runtime";
+import { getExternalRuntimeStatus } from "./runtime-status";
 import { createShutdownHandler } from "./shutdown";
 import type { ServiceManager } from "./service-manager";
 import type { ExternalManagedProcess, LogEntry } from "./types";
@@ -189,6 +190,7 @@ const externalProcess = (
   runtimeName: runtimeId,
   name,
   state,
+  runtimeStatus: getExternalRuntimeStatus(state),
   status: state,
   ports: "",
 });

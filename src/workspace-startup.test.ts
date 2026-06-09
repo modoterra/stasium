@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { saveManifest } from "./manifest";
 import { normalizeProcessDefinition } from "./process-definition";
+import { getExternalRuntimeStatus } from "./runtime-status";
 import { startWorkspace } from "./workspace-startup";
 import type { ExternalRuntime, ExternalRuntimeAdapter } from "./external-runtime";
 import type { ExternalManagedProcess, LogEntry } from "./types";
@@ -107,6 +108,7 @@ const externalProcess = (): ExternalManagedProcess => ({
   runtimeName: "Docker Compose",
   name: "db",
   state: "running",
+  runtimeStatus: getExternalRuntimeStatus("running"),
   status: "Up",
   ports: "",
 });
