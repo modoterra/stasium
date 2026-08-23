@@ -266,9 +266,9 @@ Commits use Conventional Commits. Branch names must be `main`, `develop`, or `ty
 
 See `CONTRIBUTING.md` for the full contribution workflow.
 
-## Code of Conduct
+## Community
 
-See `CODE_OF_CONDUCT.md`.
+Use common sense and decency. There is no formal code of conduct. We reserve the right to moderate this community to the extent of the law and the policy of the host. Write community@modoterra.xyz if you need us.
 
 ## License
 

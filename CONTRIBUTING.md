@@ -47,7 +47,3 @@ All commits must be signed.
 ## Release Automation Notes
 
 - `GH_TOKEN` repository secret is required for semantic-release to publish releases and commit `CHANGELOG.md`.
-
-## Code of Conduct
-
-By participating, you agree to follow `CODE_OF_CONDUCT.md`.
